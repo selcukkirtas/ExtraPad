@@ -149,15 +149,16 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         // the encoding somebody is actually waiting for.
         let wantsPatches = patchBroadcaster.subscriberCount > 0
         if wantsPatches {
-            let patches = deltaEncoder.encode(pixelBuffer, quality: quality)
-            if !patches.isEmpty {
-                let messages = patches.map {
-                    WebSocket.patchPayload(x: Int($0.rect.minX), y: Int($0.rect.minY),
-                                           width: Int($0.rect.width), height: Int($0.rect.height),
-                                           isKeyframe: $0.isKeyframe, jpeg: $0.jpeg)
-                }
-                patchBroadcaster.publish(
-                    PatchGroup(messages: messages, isKeyframe: patches.contains { $0.isKeyframe }))
+            if let atlas = deltaEncoder.encode(pixelBuffer, quality: quality) {
+                let payload = WebSocket.atlasPayload(
+                    regions: atlas.regions.map {
+                        (sourceY: $0.sourceY, destX: Int($0.dest.x), destY: Int($0.dest.y),
+                         width: Int($0.size.width), height: Int($0.size.height))
+                    },
+                    isKeyframe: atlas.isKeyframe,
+                    jpeg: atlas.jpeg)
+                patchBroadcaster.publish(PatchGroup(messages: [payload],
+                                                    isKeyframe: atlas.isKeyframe))
             }
         }
 

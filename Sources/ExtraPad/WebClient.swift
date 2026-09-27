@@ -149,22 +149,30 @@ enum WebClient {
 
   var queue = [];
   var drawing = false;
-  var patches = 0, bytes = 0, windowStart = new Date().getTime();
+  var frames = 0, regions = 0, bytes = 0, decodeMs = 0;
+  var windowStart = new Date().getTime();
   var ws = null, retries = 0;
 
-  // Patches must land in the order they were produced, or a later rectangle can
-  // be overwritten by an earlier one. So exactly one decode is in flight.
+  // One decode per frame, then a synchronous blit per region. Regions must land
+  // in the order they were produced, so exactly one decode is ever in flight.
   function pump() {
     if (drawing || queue.length === 0) { return; }
     drawing = true;
     var item = queue.shift();
     var url = urlFactory.createObjectURL(item.blob);
     var img = new Image();
+    var t0 = new Date().getTime();
     img.onload = function () {
-      ctx.drawImage(img, item.x, item.y);
+      var list = item.regions;
+      for (var i = 0; i < list.length; i++) {
+        var r = list[i];
+        ctx.drawImage(img, 0, r.sy, r.w, r.h, r.dx, r.dy, r.w, r.h);
+      }
       urlFactory.revokeObjectURL(url);
+      decodeMs = decodeMs + (new Date().getTime() - t0);
+      frames = frames + 1;
+      regions = regions + list.length;
       drawing = false;
-      patches = patches + 1;
       pump();
     };
     img.onerror = function () {
@@ -175,9 +183,10 @@ enum WebClient {
     img.src = url;
   }
 
-  // If decoding cannot keep up the backlog is thrown away and the connection is
-  // restarted: reconnecting makes the server send a fresh full frame, which is
-  // the only safe way back to a correct canvas.
+  // A backlog is latency: what is queued is already stale. Keep it short, and
+  // when decoding cannot keep up throw the backlog away and reconnect, which
+  // makes the server send a fresh full frame - the only safe way back to a
+  // correct canvas.
   function overflow() {
     queue = [];
     if (ws) { ws.close(); }
@@ -187,10 +196,12 @@ enum WebClient {
     var now = new Date().getTime();
     var elapsed = now - windowStart;
     if (elapsed < 2000) { return; }
-    var fps = (patches * 1000 / elapsed).toFixed(1);
-    var mbit = (bytes * 8 / (elapsed / 1000) / 1000000).toFixed(1);
-    info.innerHTML = fps + " bolge/sn &middot; " + mbit + " Mbit/s";
-    patches = 0; bytes = 0; windowStart = now;
+    var fps = (frames * 1000 / elapsed).toFixed(1);
+    var mbit = (bytes * 8 / (elapsed / 1000) / 1000000).toFixed(2);
+    var perFrame = frames > 0 ? (decodeMs / frames).toFixed(0) : "0";
+    info.innerHTML = fps + " fps &middot; " + mbit + " Mbit/s &middot; cizim " +
+                     perFrame + " ms &middot; kuyruk " + queue.length;
+    frames = 0; regions = 0; bytes = 0; decodeMs = 0; windowStart = now;
   }
 
   function connect() {
@@ -206,15 +217,22 @@ enum WebClient {
     ws.onmessage = function (event) {
       var buf = event.data;
       var view = new DataView(buf);
-      var x = view.getUint16(0), y = view.getUint16(2);
-      var w = view.getUint16(4), h = view.getUint16(6);
-      var isKey = view.getUint8(8) & 1;
+      var isKey = view.getUint8(0) & 1;
+      var count = view.getUint8(1);
+      var list = [];
+      var off = 2;
+      for (var i = 0; i < count; i++) {
+        list.push({ sy: view.getUint16(off),     dx: view.getUint16(off + 2),
+                    dy: view.getUint16(off + 4), w:  view.getUint16(off + 6),
+                    h:  view.getUint16(off + 8) });
+        off = off + 10;
+      }
       bytes = bytes + buf.byteLength;
 
       if (isKey) { queue = []; }
-      queue.push({ x: x, y: y, w: w, h: h,
-                   blob: new Blob([new Uint8Array(buf, 9)], { type: "image/jpeg" }) });
-      if (queue.length > 24) { overflow(); return; }
+      queue.push({ regions: list,
+                   blob: new Blob([new Uint8Array(buf, off)], { type: "image/jpeg" }) });
+      if (queue.length > 3) { overflow(); return; }
       pump();
       report();
     };

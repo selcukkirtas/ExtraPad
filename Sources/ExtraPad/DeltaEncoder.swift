@@ -15,8 +15,25 @@ import Foundation
 /// to economise on - not bytes-per-region.
 final class DeltaEncoder {
 
-    struct Patch {
-        var rect: CGRect          // top-left origin, pixels
+    /// One frame's worth of changes, packed into a single JPEG.
+    ///
+    /// Every region used to be its own image, which meant one
+    /// Blob -> objectURL -> Image -> decode round trip per region in the
+    /// browser. On an iPad 2 each of those costs 10-20ms, so at tens of regions
+    /// per second the client fell behind and the picture lagged behind the
+    /// mouse - while the server saw no backpressure at all, because Safari was
+    /// happily draining the socket into its own buffer.
+    ///
+    /// Now the regions are stacked into one atlas image: the client decodes
+    /// once per frame and blits each region out of it with a cheap, synchronous
+    /// drawImage call.
+    struct Atlas {
+        struct Region {
+            var sourceY: Int      // row in the atlas
+            var dest: CGPoint     // where it goes on the canvas
+            var size: CGSize
+        }
+        var regions: [Region]
         var jpeg: Data
         var isKeyframe: Bool
     }
@@ -45,14 +62,14 @@ final class DeltaEncoder {
     /// since it has no earlier pixels to patch on top of.
     func requestKeyframe() { forceKeyframe = true }
 
-    func encode(_ pixelBuffer: CVPixelBuffer, quality: Double) -> [Patch] {
+    func encode(_ pixelBuffer: CVPixelBuffer, quality: Double) -> Atlas? {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
 
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let stride = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return [] }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
         let bytes = base.assumingMemoryBound(to: UInt8.self)
 
         let image = CIImage(cvPixelBuffer: pixelBuffer)
@@ -61,10 +78,7 @@ final class DeltaEncoder {
         if forceKeyframe || sizeChanged || previous.isEmpty {
             storePrevious(bytes: bytes, stride: stride, width: width, height: height)
             forceKeyframe = false
-            guard let jpeg = encodeRegion(image, rect: CGRect(x: 0, y: 0, width: width, height: height),
-                                          frameHeight: height, quality: quality) else { return [] }
-            return [Patch(rect: CGRect(x: 0, y: 0, width: width, height: height),
-                          jpeg: jpeg, isKeyframe: true)]
+            return keyframe(image, width: width, height: height, quality: quality)
         }
 
         let dirty = dirtyTiles(bytes: bytes, stride: stride, width: width, height: height)
@@ -73,14 +87,11 @@ final class DeltaEncoder {
         let tilesAcross = (width + Self.tileSize - 1) / Self.tileSize
         let tilesDown = (height + Self.tileSize - 1) / Self.tileSize
         let dirtyCount = dirty.reduce(0) { $0 + ($1 ? 1 : 0) }
-        if dirtyCount == 0 { return [] }
+        if dirtyCount == 0 { return nil }
 
         // Too much changed: one full frame is cheaper than many rectangles.
         if Double(dirtyCount) / Double(tilesAcross * tilesDown) > Self.keyframeThreshold {
-            guard let jpeg = encodeRegion(image, rect: CGRect(x: 0, y: 0, width: width, height: height),
-                                          frameHeight: height, quality: quality) else { return [] }
-            return [Patch(rect: CGRect(x: 0, y: 0, width: width, height: height),
-                          jpeg: jpeg, isKeyframe: true)]
+            return keyframe(image, width: width, height: height, quality: quality)
         }
 
         var rects = mergeRects(dirty: dirty, tilesAcross: tilesAcross, tilesDown: tilesDown,
@@ -89,11 +100,58 @@ final class DeltaEncoder {
             rects = [bounding]
         }
 
-        return rects.compactMap { rect in
-            guard let jpeg = encodeRegion(image, rect: rect, frameHeight: height, quality: quality)
-            else { return nil }
-            return Patch(rect: rect, jpeg: jpeg, isKeyframe: false)
+        return packAtlas(image, rects: rects, frameHeight: height, quality: quality)
+    }
+
+    private func keyframe(_ image: CIImage, width: Int, height: Int, quality: Double) -> Atlas? {
+        let full = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let jpeg = encodeRegion(image, rect: full, frameHeight: height, quality: quality)
+        else { return nil }
+        return Atlas(regions: [Atlas.Region(sourceY: 0, dest: .zero,
+                                            size: CGSize(width: width, height: height))],
+                     jpeg: jpeg, isKeyframe: true)
+    }
+
+    /// Stacks the changed rectangles into one column and encodes that as a
+    /// single JPEG. Stacking (rather than real bin packing) keeps the layout
+    /// trivial for both sides; the wasted width costs little because JPEG
+    /// compresses the untouched margin to almost nothing.
+    private func packAtlas(_ image: CIImage, rects: [CGRect],
+                           frameHeight: Int, quality: Double) -> Atlas? {
+        guard !rects.isEmpty else { return nil }
+
+        let atlasWidth = rects.map(\.width).max() ?? 0
+        let atlasHeight = rects.reduce(0) { $0 + $1.height }
+        guard atlasWidth > 0, atlasHeight > 0 else { return nil }
+
+        var composed: CIImage?
+        var regions: [Atlas.Region] = []
+        var cursorY: CGFloat = 0
+
+        for rect in rects {
+            // CoreImage's origin is bottom-left; ours is top-left.
+            let ciRect = CGRect(x: rect.minX, y: CGFloat(frameHeight) - rect.maxY,
+                                width: rect.width, height: rect.height)
+            // Place each region so that atlas row 0 is the first rectangle.
+            let destY = atlasHeight - cursorY - rect.height
+            let piece = image
+                .cropped(to: ciRect)
+                .transformed(by: CGAffineTransform(translationX: -ciRect.minX + 0,
+                                                   y: -ciRect.minY + destY))
+            composed = composed.map { piece.composited(over: $0) } ?? piece
+            regions.append(Atlas.Region(sourceY: Int(cursorY), dest: rect.origin, size: rect.size))
+            cursorY += rect.height
         }
+
+        guard let composed else { return nil }
+        let atlasRect = CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight)
+        guard let jpeg = ciContext.jpegRepresentation(
+            of: composed.cropped(to: atlasRect),
+            colorSpace: colorSpace,
+            options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: quality]
+        ) else { return nil }
+
+        return Atlas(regions: regions, jpeg: jpeg, isKeyframe: false)
     }
 
     // MARK: - Tile comparison

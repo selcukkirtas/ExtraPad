@@ -68,17 +68,28 @@ enum WebSocket {
 }
 
 extension WebSocket {
-    /// Patch wire format: 9-byte header then JPEG - x, y, w, h as big-endian
-    /// u16 and a flag byte whose low bit marks a keyframe. Big-endian so the
-    /// browser can read it with DataView's defaults.
-    static func patchPayload(x: Int, y: Int, width: Int, height: Int,
+    /// Atlas wire format, all big-endian so the browser can read it with
+    /// DataView's defaults:
+    ///
+    ///     u8  flags          bit 0 = keyframe
+    ///     u8  regionCount
+    ///     regionCount x { u16 sourceY, u16 destX, u16 destY, u16 width, u16 height }
+    ///     ... JPEG bytes ...
+    ///
+    /// One image per frame, however many rectangles it carries: the client
+    /// decodes once and then blits each region out of it.
+    static func atlasPayload(regions: [(sourceY: Int, destX: Int, destY: Int, width: Int, height: Int)],
                              isKeyframe: Bool, jpeg: Data) -> Data {
-        var data = Data(capacity: 9 + jpeg.count)
-        for value in [x, y, width, height].map({ UInt16(clamping: $0) }) {
-            data.append(UInt8(value >> 8))
-            data.append(UInt8(value & 0xFF))
-        }
+        var data = Data(capacity: 2 + regions.count * 10 + jpeg.count)
         data.append(isKeyframe ? 1 : 0)
+        data.append(UInt8(clamping: regions.count))
+        for region in regions {
+            for value in [region.sourceY, region.destX, region.destY,
+                          region.width, region.height].map({ UInt16(clamping: $0) }) {
+                data.append(UInt8(value >> 8))
+                data.append(UInt8(value & 0xFF))
+            }
+        }
         data.append(jpeg)
         return data
     }

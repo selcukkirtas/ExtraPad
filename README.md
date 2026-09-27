@@ -145,14 +145,25 @@ Ayni makinede, ayni kalitede (0.6) olculdu:
 | Teslim | 6.8 fps | ~72 bolge/sn (≈30 fps) |
 | Ortalama gonderim | 158 KB/kare | 1.9 KB/bolge (ekranin %0.9'u) |
 
-Delta modunun iki tasarim kisiti var, ikisi de eski iPad'den geliyor:
+Delta modunun tasarimini eski iPad belirledi:
 
-- **Dikdortgenler az ve buyuk tutulur.** Her bolge icin bir JavaScript cagrisi
-  gerekiyor ve ana ekrana eklenmis bir web uygulamasi eski iOS'ta JIT'siz
-  calisabiliyor. Bu yuzden karo basina degil, dikdortgen basina maliyet onemli.
-- **Hicbir yama atlanamaz.** Kacirilan bir yama, bir sonraki keyframe'e kadar
-  ekranda bayat bir dikdortgen birakir. Yetisemeyen istemci bu yuzden yarim
-  guncelleme almak yerine tamamen atlanir ve kendisine keyframe istenir.
+- **Kare basina tek goruntu.** Degisen dikdortgenler tek bir JPEG'e dikey olarak
+  paketlenir (atlas), istemci bir kez cozer ve her bolgeyi ucuz, senkron bir
+  `drawImage` ile yerine blitler. Ilk surumde her bolge ayri bir goruntuydu; bu,
+  bolge basina bir Blob -> objectURL -> Image -> decode turu demekti ve iOS 9'da
+  her tur 10-20 ms tutuyor. Saniyede onlarca bolgede istemci geri kaliyor,
+  goruntu farenin arkasinda suruklenmeye basliyordu - sunucu ise hicbir geri
+  baski gormuyordu, cunku Safari soketi kendi tamponuna bosaltmaya devam ediyor.
+- **Kuyruk kisa tutulur (en fazla 3 kare).** Kuyrukta bekleyen sey zaten bayat
+  goruntudur; uzun kuyruk dogrudan gecikme demektir. Tasarken kuyruk atilir ve
+  baglanti yenilenir, bu da sunucudan taze bir tam kare getirir.
+- **Hicbir guncelleme atlanamaz.** Kacirilan bir guncelleme, bir sonraki
+  keyframe'e kadar ekranda bayat bir dikdortgen birakir. Yetisemeyen istemci bu
+  yuzden yarim guncelleme almak yerine tamamen atlanir.
+- **Geri kalan istemci tek bir keyframe ister, her karede degil.** Keyframe bir
+  delta'nin on katidir; her karede istemek, zaten zorlanan istemciyi bogar.
+  Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince
+  3 keyframe ve 1.27 Mbit/s'e dustu.
 
 ## Bilinen sinirlar
 
