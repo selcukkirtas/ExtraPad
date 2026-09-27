@@ -300,19 +300,22 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if config.auth {
             menu.addItem(.separator())
-            let approved = server?.devices.approvedDevices ?? []
+            // What is connected now, not what has ever been approved: the
+            // stored list accumulates every browser that ever paired and says
+            // nothing about the present.
+            let connected = server?.connectedAddresses ?? []
             let header = NSMenuItem(
-                title: approved.isEmpty ? "Onayli cihaz yok" : "Onayli cihazlar: \(approved.count)",
+                title: connected.isEmpty ? "Bagli cihaz yok" : "Bagli cihazlar: \(connected.count)",
                 action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
-            for device in approved.prefix(5) {
-                let item = NSMenuItem(title: "   " + device.address, action: nil, keyEquivalent: "")
+            for address in connected.prefix(5) {
+                let item = NSMenuItem(title: "   " + address, action: nil, keyEquivalent: "")
                 item.isEnabled = false
                 menu.addItem(item)
             }
-            if !approved.isEmpty {
-                let forget = NSMenuItem(title: "Cihaz izinlerini sil",
+            if !(server?.devices.approvedDevices.isEmpty ?? true) {
+                let forget = NSMenuItem(title: "Kayitli cihaz izinlerini sil",
                                         action: #selector(forgetDevices), keyEquivalent: "")
                 forget.target = self
                 menu.addItem(forget)

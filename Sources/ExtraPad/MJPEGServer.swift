@@ -38,6 +38,18 @@ final class MJPEGServer {
         return Array(_clients.values)
     }
 
+    /// Addresses with a live connection right now, one entry each - a single
+    /// device can hold more than one socket.
+    var connectedAddresses: [String] {
+        clientLock.lock(); defer { clientLock.unlock() }
+        var seen: [String] = []
+        for client in _clients.values {
+            let address = client.address.replacingOccurrences(of: " (delta)", with: "")
+            if !seen.contains(address) { seen.append(address) }
+        }
+        return seen.sorted()
+    }
+
     /// Called when /set asks for new capture settings.
     var onSettingsChange: ((Double?, Int?) -> Void)?
     /// Called when a delta client needs a full frame to draw on top of.
