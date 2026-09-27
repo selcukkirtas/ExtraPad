@@ -129,6 +129,21 @@ alabildigini alir, gerisi atlanir. `framesSkipped` sayisinin yuksek olmasi hata
 degil, geri baskinin calistiginin isaretidir - kareler kuyruklanmadigi icin
 goruntu gecikmeli degil yalnizca seyrek olur.
 
+## Sonuc: iPad 2 uzerinde olculen son durum
+
+Cihazin kendi olctugu degerler (`/` sayfasindaki serit), 1024x768, kalite 0.95:
+
+| | Ilk calisan surum (MJPEG) | Son durum (delta) |
+|---|---|---|
+| iPad'in aldigi | 4.8 fps | **42 fps** |
+| Aktarim | 8.3 Mbit/s | **0.90 Mbit/s** |
+| Kalite | 0.6 | **0.95** |
+| iPad'de cizim suresi | - | 10 ms/kare |
+| Istemci kuyrugu | - | 0 |
+| Baglanti tavaninin kullanimi | %55 | **%6** |
+
+Yani 9 kat kare hizi, 9 kat az bant genisligi, ustelik daha yuksek kalitede.
+
 ## Iki yayin modu
 
 | Adres | Yol | Kullanim |
