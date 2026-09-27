@@ -3,8 +3,8 @@ import Foundation
 /// Runtime knobs. Defaults target a non-Retina 9.7" iPad (1024x768 CSS px), which
 /// is what every iPad still stuck on iOS 9-11 reports to Safari.
 struct Config {
-    var width = 1024
-    var height = 768
+    var width = Config.saved(Config.widthKey, default: 1024)
+    var height = Config.saved(Config.heightKey, default: 768)
     var refreshRate = 60.0
     /// 1 = one pixel per point (cheapest to encode and to decode on an old iPad).
     var scale = 1
@@ -33,6 +33,8 @@ struct Config {
     static let fpsKey = "ExtraPadFPS"
     static let qualityKey = "ExtraPadQuality"
     static let hudKey = "ExtraPadHUD"
+    static let widthKey = "ExtraPadWidth"
+    static let heightKey = "ExtraPadHeight"
 
     static func saved<T>(_ key: String, default fallback: T) -> T {
         (UserDefaults.standard.object(forKey: key) as? T) ?? fallback
@@ -74,6 +76,9 @@ struct Config {
                     let parts = v.lowercased().split(separator: "x")
                     if parts.count == 2, let w = Int(parts[0]), let h = Int(parts[1]) {
                         c.width = w; c.height = h
+                        UserDefaults.standard.set(w, forKey: widthKey)
+                        UserDefaults.standard.set(h, forKey: heightKey)
+                        UserDefaults.standard.synchronize()
                     }
                 }
             case "--fps":
@@ -117,7 +122,7 @@ struct Config {
     ExtraPad - turns an old iPad into a wireless second display for your Mac.
 
     Usage: ExtraPad [options]
-      --size WxH      Virtual display resolution (default 1024x768)
+      --size WxH      Virtual display resolution (remembered, default 1024x768)
       --fps N         Frames per second (remembered, default 24)
       --quality Q     JPEG quality 0.1-1.0 (remembered, default 0.8)
       --scale 1|2     2 = HiDPI/Retina mode (default 1)
