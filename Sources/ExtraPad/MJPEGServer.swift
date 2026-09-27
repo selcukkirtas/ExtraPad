@@ -123,6 +123,19 @@ final class MJPEGServer {
             """
             send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
 
+        case "/icon.png":
+            // Cached hard on purpose: iOS fetches this once when the user adds
+            // the page to the home screen.
+            let icon = AppIcon.pngData
+            var header = "HTTP/1.1 200 OK\r\n"
+            header += "Content-Type: image/png\r\n"
+            header += "Content-Length: \(icon.count)\r\n"
+            header += "Cache-Control: max-age=86400\r\n"
+            header += "Connection: close\r\n\r\n"
+            var out = Data(header.utf8)
+            out.append(icon)
+            conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
+
         case "/favicon.ico":
             send(conn, status: "204 No Content", body: Data(), contentType: "image/x-icon")
 

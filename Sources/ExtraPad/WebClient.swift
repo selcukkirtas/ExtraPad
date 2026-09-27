@@ -13,6 +13,8 @@ enum WebClient {
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="ExtraPad">
+<link rel="apple-touch-icon" href="/icon.png">
 <title>ExtraPad</title>
 <style>
   * { margin: 0; padding: 0; -webkit-user-select: none; user-select: none; }
@@ -41,15 +43,29 @@ enum WebClient {
   var img = document.getElementById("screen");
   var hud = document.getElementById("hud");
   var info = document.getElementById("info");
-  var hideTimer = null;
   var retries = 0;
+  var frames = 0;
+  var windowFrames = 0;
+  var windowStart = new Date().getTime();
+  var fpsText = "";
 
   function setInfo(text) { info.innerHTML = text; }
 
-  function autoHide() {
-    if (hideTimer) { clearTimeout(hideTimer); }
-    hud.className = "";
-    hideTimer = setTimeout(function () { hud.className = "hidden"; }, 3000);
+  // The number that matters is how many frames this iPad actually finished
+  // decoding - not how many the Mac sent. Measured here, on the device.
+  function countFrame() {
+    frames = frames + 1;
+    windowFrames = windowFrames + 1;
+    var now = new Date().getTime();
+    var elapsed = now - windowStart;
+    if (elapsed >= 2000) {
+      var fps = (windowFrames * 1000 / elapsed).toFixed(1);
+      fpsText = fps + " fps (toplam " + frames + ")";
+      windowFrames = 0;
+      windowStart = now;
+      setInfo("__W__x__H__ &middot; " + fpsText);
+      hud.className = "";   // keep the reading visible while measuring
+    }
   }
 
   function connect() {
@@ -59,8 +75,7 @@ enum WebClient {
 
   img.onload = function () {
     retries = 0;
-    setInfo("__W__x__H__ &middot; ~__FPS__ fps");
-    autoHide();
+    countFrame();
   };
 
   // A dropped Wi-Fi frame ends the multipart response; reconnect with backoff.
@@ -71,11 +86,15 @@ enum WebClient {
     setTimeout(connect, Math.min(1000 * retries, 5000));
   };
 
-  document.addEventListener("touchstart", autoHide, false);
-  document.addEventListener("click", autoHide, false);
+  // Tap toggles the readout instead of hiding it on a timer.
+  function toggleHud() {
+    hud.className = hud.className === "hidden" ? "" : "hidden";
+  }
+  document.addEventListener("touchstart", toggleHud, false);
+  document.addEventListener("click", toggleHud, false);
 
+  setInfo("__W__x__H__ &middot; olculuyor&hellip;");
   connect();
-  autoHide();
 }());
 </script>
 </body>
