@@ -1,315 +1,257 @@
 # ExtraPad
 
-Eski bir iPad'i Mac'e **kablosuz ikinci ekran** yapar. Duet / Sidecar'in yaptigi
-isi yapar, ucretsizdir ve iPad'e hicbir sey kurmaniz gerekmez.
+Turns an old iPad into a **wireless second display** for your Mac. Does what
+Duet or Sidecar does, is free, and needs nothing installed on the iPad.
 
-Mac'te gercek bir sanal ekran olusturulur (Sistem Ayarlari onu normal bir monitor
-gibi gorur, pencereleri surukleyebilirsiniz), bu ekran yakalanir ve iPad'in
-Safari'sine canli goruntu olarak akitilir.
+A real virtual display is created on the Mac - System Settings sees it as an
+ordinary monitor and you can drag windows onto it - then captured and streamed
+live to Safari on the iPad. Touching the iPad drives the Mac's cursor.
 
-## Neden bu mimari
+## Why this architecture
 
-iPad iOS 9-11 uzerinde oldugu icin native bir iPad uygulamasi **yazilamaz**:
-guncel Xcode iOS 15 altina kod imzalayip yukleyemez. Dolayisiyla iPad tarafi
-Safari'dir. Bu da kodek secimini belirler:
+The iPad runs iOS 9-11, so a native iPad app **cannot be built**: current Xcode
+cannot sign and install below iOS 15. The iPad side therefore has to be Safari,
+and that decides the codec:
 
-| Yol | iOS 9-11 Safari'de durumu |
+| Approach | On Safari for iOS 9-11 |
 |---|---|
-| WebRTC | Yok (Safari'ye iOS 11'de geldi, oncesinde hic yok) |
-| H.264 + Media Source Extensions | Yok (MSE iOS'a cok sonra geldi) |
-| **MJPEG (`multipart/x-mixed-replace`)** | **Calisir** - Safari kendi JPEG decoder'i ile cozer |
+| WebRTC | Absent (arrived in iOS 11, nothing before) |
+| H.264 + Media Source Extensions | Absent (MSE came to iOS much later) |
+| **JPEG regions** | **Works** - Safari decodes with its own JPEG path |
 
-Bu yuzden her kare ayri bir JPEG olarak gonderilir. JavaScript piksellere hic
-dokunmaz; goruntu dogrudan bir `<img>` etiketinin icine akar.
+So every update is JPEG. What changed over time is *how much* JPEG: the first
+working version sent whole frames, the current one sends only the rectangles
+that changed.
 
-## Kurulum
+## Result measured on an iPad 2 (A1395)
+
+Numbers the device itself reported, at 1024x768:
+
+| | First working version | Now |
+|---|---|---|
+| Frames the iPad received | 4.8 fps | **42 fps** |
+| Bandwidth | 8.3 Mbit/s | **0.90 Mbit/s** |
+| Quality | 0.6 | **0.95** |
+| Draw time on the iPad | - | 10 ms/frame |
+| Client queue | - | 0 |
+| Share of the link ceiling used | 55% | **6%** |
+
+Nine times the frame rate on a ninth of the bandwidth, at higher quality.
+
+## Install
 
 ```bash
 cd ExtraPad
-./scripts/build-app.sh        # build/ExtraPad.app olusturur
-open build/ExtraPad.app
+./scripts/build-app.sh
+open "$HOME/Library/Application Support/ExtraPad/ExtraPad.app"
 ```
 
-Ilk caliştirmada macOS **Ekran Kaydi** izni isteyecek:
-Sistem Ayarlari > Gizlilik ve Guvenlik > Ekran ve Sistem Sesi Kaydi > ExtraPad.
-Izni verdikten sonra uygulamayi bir kez yeniden baslatin.
+The bundle is built outside the project on purpose: if the repo sits in iCloud
+Drive (`~/Documents` and `~/Desktop` do by default), the file provider stamps
+`com.apple.FinderInfo` onto the bundle while `codesign` is sealing it, and
+signing fails every time.
 
-## Kullanim
+On first run macOS asks for **Screen Recording**: System Settings > Privacy &
+Security > Screen & System Audio Recording > ExtraPad. Restart the app once
+after granting it. Touch input additionally needs **Accessibility**; without it
+macOS silently swallows synthetic events, so the app checks up front and puts a
+shortcut in the menu bar if it is missing.
 
-1. Menu cubugundaki ekran simgesine tiklayin; adres anahtariyla birlikte orada
-   yazar (`http://192.168.x.x:8777/?k=...`). Tiklayinca panoya kopyalanir.
-2. iPad'de Safari'yi acip o adrese gidin.
-3. Safari'de **Paylas > Ana Ekrana Ekle** yapin; boylece adres cubugu olmadan tam ekran calisir.
-4. Mac ve iPad **ayni Wi-Fi agında** olmali. 5 GHz bandi gecikmeyi ciddi sekilde dusurur.
+The build script prefers a real signing certificate over an ad-hoc signature.
+This matters more than it looks: macOS ties the Screen Recording permission to
+the app's code identity, and an ad-hoc signature changes its hash on every
+build, so the permission is revoked each time you rebuild.
 
-iPad'in ekrani kararmasin diye: iPad > Ayarlar > Ekran ve Parlaklik > Otomatik Kilit > Asla.
+## Use
 
-### Secenekler
+1. Click the ExtraPad icon in the menu bar. It shows the address and a
+   six-digit pairing code.
+2. On the iPad, open Safari and go to the address - just `http://192.168.x.x:8777`.
+3. Enter the six-digit code. iOS shows a number pad for it.
+4. **Share > Add to Home Screen** to run it full screen without Safari's chrome.
+
+The code is entered once; a cookie carries the session afterwards, so the
+home-screen shortcut opens straight into the screen.
+
+On the iPad, keep the display awake: Settings > Display & Brightness >
+Auto-Lock > Never.
+
+### Options
 
 ```bash
-build/ExtraPad.app/Contents/MacOS/ExtraPad --help
+"$HOME/Library/Application Support/ExtraPad/ExtraPad.app/Contents/MacOS/ExtraPad" --help
 ```
 
-| Secenek | Varsayilan | Not |
+| Option | Default | Notes |
 |---|---|---|
-| `--size WxH` | `1024x768` | Eski 9.7" iPad'ler Safari'ye 1024x768 bildirir |
-| `--fps N` | `24` | Hatirlanir. Delta modunda tasiyabileceginizden yuksek tutmak zararsiz |
-| `--quality Q` | `0.8` | Hatirlanir. Delta modunda 0.95'e kadar cikabilir, cunku yalnizca degisen bolgeler gonderilir |
-| `--scale 1\|2` | `1` | 2 = HiDPI; Retina olmayan iPad'de gereksiz yuk |
-| `--position YON` | `right` | `left`/`right`/`above`/`below`; menuden de degistirilir, hatirlanir |
-
-Konum, kalite ve kare hizi **hatirlanir**: ister bayrakla ister `/set` ile
-degistirin, bir sonraki acilista ayni ayarla baslar. Sanal ekran her acilista
-yeniden olusturuldugu icin macOS bunlari kendisi hatirlayamiyor.
+| `--size WxH` | `1024x768` | Old 9.7" iPads report 1024x768 to Safari |
+| `--fps N` | `24` | Remembered. Setting it higher than the link can carry is harmless |
+| `--quality Q` | `0.8` | Remembered. Can sit near 1.0 - only changed regions are sent |
+| `--scale 1\|2` | `1` | 2 = HiDPI; wasted on a non-Retina iPad |
+| `--position DIR` | `right` | `left`/`right`/`above`/`below`; also in the menu |
+| `--hud` | off | Diagnostic strip on the iPad; also toggled from the menu |
+| `--no-input` | input on | View only, no touch control |
+| `--no-auth` | key on | Disables the access key - trusted networks only |
 | `--port N` | `8777` | |
-| `--no-input` | giris acik | iPad'den dokunma girisini kapatir |
-| `--no-auth` | anahtar acik | Erisim anahtarini kapatir (yalnizca guvendiginiz agda) |
-| `--mirror` | kapali | Sanal ekran yerine ana ekrani yansitir |
+| `--mirror` | off | Mirror the main display instead of creating one |
 
-Log gormek icin uygulamayi paket icinden dogrudan calistirin:
-`build/ExtraPad.app/Contents/MacOS/ExtraPad`
+Position, quality, frame rate and the diagnostic strip are **remembered**: the
+virtual display is recreated on every launch, so macOS cannot remember them for
+you.
 
-### Ucnokta uclari
+Run the binary inside the bundle directly to see logs.
 
-- `/` - iPad istemcisi (delta modu)
-- `/mjpeg` + `/stream` - yedek MJPEG istemcisi ve akisi
-- `/ws` - delta akisi (WebSocket)
-- `/snapshot` - tek kare JPEG (test icin: `curl -o t.jpg http://localhost:8777/snapshot`)
-- `/info` - JSON durum: uretilen kare, istemci basina **gonderilen/atlanan kare**,
-  bayt ve gerceklesen fps. Darbogaz teshisi icin asil arac budur.
-- `/set?quality=0.3&fps=12` - yayin ayarlarini **calisirken** degistirir; istemciler
-  bagli kalir, sayfayi yenilemek gerekmez
+### Endpoints
 
-## Bant genisligi
+- `/` - the iPad client (delta mode)
+- `/mjpeg` + `/stream` - fallback full-frame client and stream
+- `/ws` - the delta stream (WebSocket)
+- `/snapshot` - one JPEG frame
+- `/info` - JSON status: frames produced, per-client **sent/skipped** counts,
+  bytes, achieved fps, and delta-encoder counters. This is the diagnostic tool
+  that matters.
+- `/set?quality=0.3&fps=12` - retunes a **running** stream; clients stay
+  connected and nothing has to be reloaded
 
-Bu makinede olculdu (1024x768, hareketli icerik):
+## Access control
 
-| Ayar | Kare | Bant genisligi |
+Anyone who can reach the port could otherwise watch the screen and - since touch
+input landed - drive the mouse. Three gates, in order:
+
+1. **The address** - is the device on your network at all.
+2. **A six-digit pairing code** - does it know the secret. Wrong guesses are
+   slowed down progressively and the code retires itself after 20 of them.
+3. **Device approval on the Mac** - is it one of your devices.
+
+A device that enters the correct code is let straight in; the secret has just
+been checked, and confirming the same thing again on the Mac would be friction
+rather than security. The approval prompt remains for what it was meant for: a
+device that turns up already holding a cookie but has never entered a code.
+
+The menu bar lists **currently connected** devices, not every device that has
+ever paired, and can clear stored approvals.
+
+**Why iCloud accounts are not matched:** Safari gives a web page nothing about
+the Apple ID, and matching accounts through CloudKit needs a native app, which
+means iOS 15+. This iPad is on iOS 9, so that route is closed. Asking the person
+at the Mac answers the same question better under these constraints.
+
+**Be clear about what this is:** a shared secret over plain HTTP on a LAN. It
+stops someone who knows the address. It does not stop someone who can read your
+network traffic, because the key and the screen both travel in the clear. TLS
+would fix that, but iOS 9 makes a self-signed certificate painful enough that it
+would cost more than it buys here. Fine on a home network; do not leave it
+running on a shared one.
+
+## Touch input
+
+One finger drives the Mac's cursor: tapping clicks, dragging drags. Coordinates
+travel back over the same WebSocket as text (`D`/`M`/`U` plus x and y) in the
+virtual display's own pixel space; the server adds the display's position in the
+global arrangement and posts a `CGEvent`. That position is read fresh each time,
+because you can move the display from the menu.
+
+Two details worth knowing:
+
+- **Move messages are capped at ~60/s.** The Mac cannot use more than the
+  capture rate, and the iPad pays for every message.
+- **If the connection drops mid-drag the button is released**, so the Mac is not
+  left with a stuck mouse button.
+
+## The network matters more than the settings
+
+The single biggest gain in this project came from the network, not from tuning.
+
+While the Mac and the iPad shared one radio, every byte crossed the air twice
+(Mac to router, router to iPad) and the slower client set the pace for the whole
+medium:
+
+| Topology | Ceiling | iPad at quality 0.25-0.3 |
 |---|---|---|
-| `--fps 24 --quality 0.6` (varsayilan) | 82 KB | **15.0 Mbit/s** |
-| `--fps 12 --quality 0.45` | 57 KB | **5.6 Mbit/s** |
+| Mac and iPad on the same 5 GHz radio | 8-9 Mbit/s | 12-13 fps |
+| **Mac on 5 GHz, iPad on 2.4 GHz (separate radios)** | **15 Mbit/s** | **27 fps** |
 
-Hareketsiz ekranda trafik ~0'a iner: ScreenCaptureKit degismeyen kareyi hic
-gondermez.
+So put them on **separate radios** first. Note also that old iPads often run
+802.11n on 2.4 GHz only and fall back to 802.11a on 5 GHz - for those devices
+2.4 GHz can be the *faster* band, the opposite of the usual advice.
 
-**2.4 GHz Wi-Fi kullaniyorsaniz** varsayilan ayar sinirda kalir; `--fps 12
---quality 0.45` ile baslayin. 5 GHz'de varsayilan rahat calisir.
+If the iPad cannot see a 5 GHz network at all, the usual cause is the router:
+iOS 9 joins **WPA2-PSK (AES)** only, not WPA2/WPA3 transition mode, and old
+devices never see DFS channels (52-144). Fix the security mode and pin the
+channel to 36-48.
 
-### Gercek bir baglantida olculen tavan (iPad 2, A1395)
+## How the delta stream works
 
-`/info` ile iPad'e *gercekten* giden kareler sayilarak olculdu.
+The screen is compared with the previous frame in 32px tiles; changed tiles are
+merged into a few large rectangles, packed into a **single JPEG atlas**, and sent
+with their coordinates. The client decodes once per frame and blits each region
+out of the atlas with a cheap, synchronous `drawImage`.
 
-**En onemli bulgu ayar degil, ag topolojisi.** Mac ve iPad ayni telsiz radyoyu
-paylastigi surece her bayt havayi iki kez kullanir (Mac -> router, router -> iPad),
-ve yavas olan cihaz butun ortamin hizini belirler. iPad 2 gibi tek akisli eski bir
-istemci varken bu tek basina hizi yariya indiriyor:
+Every part of that shape was forced by measurement:
 
-| Topoloji | Tavan | Kalite 0.25-0.3'te iPad |
+- **One image per frame, not one per region.** The first version sent each
+  region as its own image, which meant a Blob -> objectURL -> Image -> decode
+  round trip per region. On iOS 9 each of those costs 10-20 ms, so at tens of
+  regions per second the client fell behind and the picture lagged behind the
+  mouse - while the server saw no backpressure at all, because Safari kept
+  draining the socket into its own buffer.
+- **The queue is short (3 frames).** Whatever is queued is already stale; a long
+  queue *is* latency.
+- **No update may be skipped.** A missed patch leaves a stale rectangle on the
+  canvas until the next keyframe, so a client that cannot keep up is skipped
+  entirely rather than fed a partial update.
+- **Quality follows motion.** When most of the screen is changing, quality drops
+  - detail is already blurred by motion, and a 270 KB full frame takes long
+  enough to send that the client falls behind. When the screen settles, tiles
+  that were sent at reduced quality are repainted sharp a batch at a time, using
+  bandwidth that would otherwise sit idle.
+- **A client that falls behind asks for one keyframe, not one per frame**, and
+  the request is time-throttled rather than latched. A latch deadlocks: if the
+  keyframe it waits for is itself dropped, it never opens and the client is
+  skipped silently forever - the symptom is a frozen picture while the server
+  happily keeps producing frames.
+- **A send that never completes drops the connection** after five seconds, so
+  the client reconnects instead of staring at a frozen screen.
+
+Measured on the same machine at the same quality (0.6): full frames cost
+8.3 Mbit/s for 6.8 fps; deltas cost 1.1 Mbit/s for roughly 30 fps, with an idle
+screen costing nothing at all.
+
+## Two streaming modes
+
+| Address | Path | Use |
 |---|---|---|
-| Mac 5 GHz + iPad ayni 5 GHz radyoda | 8-9 Mbit/s | 12-13 fps |
-| **Mac 5 GHz + iPad 2.4 GHz (ayri radyo)** | **15 Mbit/s** | **27 fps** |
+| `/` (and `/delta`) | Changed rectangles, WebSocket + canvas | **Default.** Far less bandwidth and a much higher frame rate at the same quality |
+| `/mjpeg` | Full-frame MJPEG inside an `<img>` | Fallback: needs no WebSocket, no canvas and no JavaScript in the pixel path |
 
-Yani once ikisini **ayri radyolara** alin; ayar kurcalamaktan cok daha fazla
-kazandiriyor. Eski iPad'lerde 802.11n cogu zaman sadece 2.4 GHz'de calisir, 5 GHz'de
-802.11a'ya duserler - bu cihazlar icin 2.4 GHz *daha hizli* bant olabilir.
+## Known limits
 
-Ayri radyo kurulumunda, fps 30 sabitken:
+- **No wired connection.** Safari cannot reach the Mac over USB. The one
+  exception is a cellular iPad, where USB tethering gives a steadier IP link.
+  Real wired support needs a native iPad app, which means iOS 15+.
+- **Bluetooth is not an alternative**, for three separate reasons: Safari on iOS
+  has no Bluetooth API at all, so there is no code path; BLE on that generation
+  of iPad carries roughly 0.1-0.3 Mbit/s against the 15 Mbit/s needed; and
+  Bluetooth shares the 2.4 GHz band, so it would degrade the Wi-Fi link in use.
+- **The virtual display uses a private API** (`CGVirtualDisplay`). Verified on
+  macOS 27. If a macOS update breaks it the app does not crash - it falls back
+  to `--mirror`.
+- **Rebuilding can reset permissions** if no signing certificate is available
+  and the app falls back to an ad-hoc signature.
 
-| Kalite | iPad'in aldigi | Kare | Aktarim |
-|---|---|---|---|
-| 0.25 | 27.4 fps | 67 KB | 15.1 Mbit/s |
-| **0.35** | **16.2 fps** | 85 KB | 11.3 Mbit/s |
-| 0.45 | 12.4 fps | 110 KB | 11.2 Mbit/s |
-| 0.55 | 5.8 fps | 138 KB | 6.5 Mbit/s |
+## Layout
 
-Aktarimin yuksek kalitede *dusmesi* dikkat cekici: bu saf bant genisligi siniri
-degil. Buyuk kareler 2.4 GHz'de daha cok yeniden iletime ugrar ve bir kare
-uzadikca o sirada uretilen kareler atlanir. Kareyi kucuk tutmanin getirisi
-dogrusaldan fazla.
+| File | Responsibility |
+|---|---|
+| `Sources/VirtualDisplayBridge/` | Objective-C declarations of the private `CGVirtualDisplay` classes. Instances come from `NSClassFromString` and fields are set through KVC, so a renamed field costs one skipped field instead of a crash |
+| `Sources/ExtraPad/AppController.swift` | Menu bar app, pipeline setup, permission flows |
+| `Sources/ExtraPad/ScreenStreamer.swift` | ScreenCaptureKit capture and JPEG encoding |
+| `Sources/ExtraPad/DeltaEncoder.swift` | Tile diffing, rectangle merging, atlas packing, progressive refresh |
+| `Sources/ExtraPad/WebSocket.swift` | Handshake, framing, wire format |
+| `Sources/ExtraPad/MJPEGServer.swift` | Hand-written HTTP/1.1 server, routing, access control |
+| `Sources/ExtraPad/Auth.swift` | Access key, pairing code, cookies |
+| `Sources/ExtraPad/DeviceRegistry.swift` | Per-device approval |
+| `Sources/ExtraPad/InputInjector.swift` | Touches to `CGEvent` mouse events |
+| `Sources/ExtraPad/WebClient.swift` | Every page the iPad sees, ES5 |
 
-`--fps`'i tasiyabileceginizden yuksek tutmak ise zararsiz, hatta faydali: istemci
-alabildigini alir, gerisi atlanir. `framesSkipped` sayisinin yuksek olmasi hata
-degil, geri baskinin calistiginin isaretidir - kareler kuyruklanmadigi icin
-goruntu gecikmeli degil yalnizca seyrek olur.
-
-## Sonuc: iPad 2 uzerinde olculen son durum
-
-Cihazin kendi olctugu degerler (`/` sayfasindaki serit), 1024x768, kalite 0.95:
-
-| | Ilk calisan surum (MJPEG) | Son durum (delta) |
-|---|---|---|
-| iPad'in aldigi | 4.8 fps | **42 fps** |
-| Aktarim | 8.3 Mbit/s | **0.90 Mbit/s** |
-| Kalite | 0.6 | **0.95** |
-| iPad'de cizim suresi | - | 10 ms/kare |
-| Istemci kuyrugu | - | 0 |
-| Baglanti tavaninin kullanimi | %55 | **%6** |
-
-Yani 9 kat kare hizi, 9 kat az bant genisligi, ustelik daha yuksek kalitede.
-
-## Iki yayin modu
-
-| Adres | Yol | Kullanim |
-|---|---|---|
-| `/` (ve `/delta`) | Sadece degisen dikdortgenler, WebSocket + canvas | **Varsayilan.** Ayni kalitede cok daha az bant genisligi ve cok daha yuksek kare hizi |
-| `/mjpeg` | Tam kare MJPEG, `<img>` icinde | Yedek yol: WebSocket, canvas ya da JS gerektirmez, delta'nin calismadigi yerde calisir |
-
-Delta modunda ekran 32px'lik karolarla onceki kareyle karsilastirilir, degisen
-karolar birkac buyuk dikdortgene birlestirilir ve yalnizca onlar JPEG'lenip
-gonderilir. Ekranin yarisindan fazlasi degistiyse tek bir tam kare gondermek daha
-ucuz oldugu icin keyframe'e dusulur.
-
-Uyarlanabilir kalite ve kademeli tazeleme devreye girmeden once, sabit yuksek
-kalitede gercek kullanimda olculen tablo suydu: kareler icinde keyframe orani
-%5, ama **toplam baytin %60'i**. Ortalama keyframe 270 KB, ortalama delta 10 KB.
-Duzeltmelerden sonra ayni testte keyframe 66 KB'ye, delta 2.5 KB'ye, esik
-asimindan kaynaklanan keyframe sayisi 72'den 0'a dustu.
-
-Ayni makinede, ayni kalitede (0.6) olculdu:
-
-| | `/` (MJPEG) | `/delta` |
-|---|---|---|
-| Hareketsiz ekran | ~0 | 0 |
-| Imlec hareketi | 8.3 Mbit/s | **1.1 Mbit/s** |
-| Teslim | 6.8 fps | ~72 bolge/sn (≈30 fps) |
-| Ortalama gonderim | 158 KB/kare | 1.9 KB/bolge (ekranin %0.9'u) |
-
-Delta modunun tasarimini eski iPad belirledi:
-
-- **Kare basina tek goruntu.** Degisen dikdortgenler tek bir JPEG'e dikey olarak
-  paketlenir (atlas), istemci bir kez cozer ve her bolgeyi ucuz, senkron bir
-  `drawImage` ile yerine blitler. Ilk surumde her bolge ayri bir goruntuydu; bu,
-  bolge basina bir Blob -> objectURL -> Image -> decode turu demekti ve iOS 9'da
-  her tur 10-20 ms tutuyor. Saniyede onlarca bolgede istemci geri kaliyor,
-  goruntu farenin arkasinda suruklenmeye basliyordu - sunucu ise hicbir geri
-  baski gormuyordu, cunku Safari soketi kendi tamponuna bosaltmaya devam ediyor.
-- **Kuyruk kisa tutulur (en fazla 3 kare).** Kuyrukta bekleyen sey zaten bayat
-  goruntudur; uzun kuyruk dogrudan gecikme demektir. Tasarken kuyruk atilir ve
-  baglanti yenilenir, bu da sunucudan taze bir tam kare getirir.
-- **Hicbir guncelleme atlanamaz.** Kacirilan bir guncelleme, bir sonraki
-  keyframe'e kadar ekranda bayat bir dikdortgen birakir. Yetisemeyen istemci bu
-  yuzden yarim guncelleme almak yerine tamamen atlanir.
-- **Kalite hareketle birlikte otomatik ayarlanir.** Ekranin buyuk bolumu
-  degisirken kalite dusurulur; detay zaten hareketle bulaniyor, ama 270 KB'lik
-  bir tam kare gondermek istemciyi geride birakiyor. Ekran durulunca, bosta
-  kalan bant genisligi kullanilarak dusuk kalitede gonderilmis karolar kare kare
-  tazelenir ve goruntu bir saniyeden kisa surede eski keskinligine doner.
-- **Istemci bozuldugunda baglantiyi kapatmaz, acik soketten tazeleme ister.**
-  Onceki hali yeniden baglaniyordu ve bu bir dongu uretiyordu: yeniden baglanmak
-  keyframe istiyor, keyframe kuyrugu tasiriyor, tasan kuyruk yeniden
-  baglaniyordu.
-- **Keyframe istegi zaman esikli, "bekleyen istek" kilidi degil.** Kilit bir
-  cikmaza giriyor: beklenen keyframe istemciye ulasamazsa (geldigi anda istemci
-  hala mesgulse) kilit hic acilmiyor, istemci sonsuza kadar sessizce atlaniyor
-  ve ekran donuyor. Belirti sinsi: sunucu kare uretmeye devam eder, atlanan
-  sayaci bile artmaz. Simdi istek en fazla 0.75 saniyede bir tekrarlanabiliyor,
-  yani kurtulus her zaman mumkun.
-- **Tamamlanmayan gonderim icin saat var.** Bir gonderim 5 saniyede bitmezse
-  baglanti dusurulur; istemci yeniden baglanir, donmus goruntuye bakmaz.
-- **Geri kalan istemci tek bir keyframe ister, her karede degil.** Keyframe bir
-  delta'nin on katidir; her karede istemek, zaten zorlanan istemciyi bogar.
-  Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince
-  3 keyframe ve 1.27 Mbit/s'e dustu.
-
-## Erisim anahtari
-
-Port'a ulasabilen herkes ekrani izleyebilir ve - dokunma girisi geldiginden beri
-- fareyi surebilir. Bu yuzden her yol bir anahtarin arkasinda.
-
-Adres kisa: `http://192.168.0.x:8777`. Sirri adrese yazmiyorsunuz - sayfa alti
-haneli bir kod soruyor ve iOS o alan icin sayi klavyesi aciyor. Uzun bir anahtari
-eski bir iPad'in URL cubuguna yazmak eziyet oldugu icin boyle.
-
-Kod dogrulaninca sunucu bir cerez verir; sonraki istekler - sayfa, akis,
-WebSocket - o cerezle gecer, yani kodu bir kez girersiniz. Ana ekran kisayolu da
-kisa adresi tasidigi icin sonrasinda dogrudan acilir.
-
-Kod alti hane, yani kucuk bir uzay: her yanlis deneme gecikmeyle cezalandirilir
-ve 20 yanlistan sonra kod kendiliginden degisir. Kaba kuvvet o noktada yeni bir
-koda ihtiyac duyar, onu da yalnizca Mac'in basindaki kisi gorebilir. Uzun anahtar
-hala `?k=...` ile de kullanilabilir.
-
-Bu sekli iOS 9 dayatti: Safari'nin o surumunde fetch yok, modern kripto yok ve
-JavaScript bir WebSocket el sikismasina baslik ekleyemiyor. Cerez ise var ve
-tarayici onu ayni kaynakli WebSocket yukseltmelerine kendisi ekliyor.
-
-Menuden **Yeni erisim anahtari uret** ile anahtar degistirilebilir; o an bagli
-cihazlar duser ve kisayollarin yenilenmesi gerekir. Guvendiginiz bir agda
-tamamen kapatmak icin `--no-auth`.
-
-### Cihaz onayi
-
-Anahtar "bu istemci sirri biliyor mu" sorusunu cevaplar. "Bu benim cihazim mi"
-sorusunu cevaplamaz - ve dokunma girisi geldiginden beri asil onemli soru bu.
-
-**Kodu dogru giren cihaz dogrudan iceri alinir** - sir o anda dogrulanmistir,
-ayni seyi bir de Mac'te onaylatmak guvenlik degil surtunme olurdu.
-
-Onay penetsi, asil tasarlandigi durum icin duruyor: elinde gecerli bir cerezle
-gelen ama hic kod girmemis bir cihaz. Boyle bir cihaz "Mac'te onay bekleniyor"
-sayfasini gorur ve ekrani ancak siz **Izin Ver** dedikten sonra alir. Kararlar
-hatirlanir; menuden **Cihaz izinlerini sil** ile sifirlanir.
-
-Cihaz, kendisine verilen rastgele bir cerez kimligiyle hatirlanir. Bu bir kimlik
-degil bir yetkidir - ama anahtar ve insan onayiyla birlestiginde sizdirilmis bir
-anahtarin tek basina ise yaramamasini saglar.
-
-**Neden iCloud hesabi eslestirilmiyor:** Safari bir web sayfasina Apple ID
-hakkinda hicbir sey vermiyor, ve CloudKit uzerinden hesap eslestirmek native bir
-uygulama gerektiriyor - o da iOS 15+ demek. Bu iPad iOS 9'da, yani o yol kapali.
-Mac'te insan onayi, ayni amaci bu kisitlar altinda daha iyi karsiliyor.
-
-**Bunun ne oldugu konusunda net olalim:** duz HTTP uzerinde, yerel agda paylasilan
-bir sir. Adresi bilen birini durdurur. Ag trafiginizi okuyabilen birini
-durdurmaz, cunku hem anahtar hem ekran goruntusu sifresiz gider. Bunu TLS
-cozerdi, ama iOS 9'da kendinden imzali sertifika kurmanin bedeli bu isin
-getirisinden buyuk.
-
-## Dokunma girisi
-
-iPad'deki tek parmak Mac'in imlecini surer: dokunmak tiklar, kaydirmak surukler.
-Uc parmakla dokunmak ustteki bilgi seridini acip kapatir - tek parmak artik giris
-oldugu icin serit oraya tasindi.
-
-Koordinatlar acik olan ayni WebSocket uzerinden metin olarak doner
-(`D`/`M`/`U` + x + y), sanal ekranin kendi piksel uzayinda. Sunucu bunlari
-ekranin global duzendeki konumuyla toplayip `CGEvent` olarak gonderir. Konum her
-seferinde yeniden okunur, cunku ekrani menuden tasiyabiliyorsunuz.
-
-**Erisilebilirlik izni gerekir.** Izin yoksa macOS gonderilen olaylari sessizce
-yutar, yani uygulama bozuk gorunur ama hata vermez. Bu yuzden ilk calistirmada
-izin istenir ve eksikse menu cubugunda "Dokunma girisi icin Erisilebilirlik
-iznini ac..." satiri belirir. Durumu `/info` icindeki `input.permitted`
-alanindan da gorebilirsiniz.
-
-Sadece goruntu isteyenler icin `--no-input`.
-
-Iki ince nokta:
-
-- **Hareket mesajlari ~60/sn ile sinirlanir.** Mac zaten yakalama hizindan
-  fazlasini kullanamiyor ve her mesajin bedelini iPad oduyor.
-- **Baglanti parmak basiliyken koparsa dugme birakilir.** Aksi halde Mac'te
-  basili kalmis bir fare dugmesiyle kalirdiniz.
-
-## Bilinen sinirlar
-
-- **Kablolu baglanti yok.** Safari USB uzerinden Mac'e ulasamaz. Tek istisna:
-  iPad hucresel modelse USB tethering ile daha kararli bir IP baglantisi kurulabilir.
-  Gercek kablolu destek native bir iPad uygulamasi ister, o da iOS 15+ demek.
-- **Bluetooth bir alternatif degil.** Uc ayri sebeple: (1) iOS Safari'de Bluetooth
-  API'si hic yok, yani istemcimizin erisebilecegi bir yol mevcut degil; (2) o nesil
-  iPad'de BLE pratikte ~0.1-0.3 Mbit/s tasir, ihtiyacimiz olan 15 Mbit/s'in 50-150
-  kati altinda; (3) Bluetooth da 2.4 GHz bandinda calistigi icin ayni anda
-  kullanilan Wi-Fi baglantisini bozar.
-- **Gecikme.** MJPEG sikistirmasi kare-arasi fark kullanmadigi icin H.264'ten cok
-  daha fazla bant genisligi yer. Metin/kod icin fazlasiyla iyi, video izlemek icin degil.
-- **Sanal ekran private API kullanir** (`CGVirtualDisplay`). macOS 27'de dogrulandi;
-  bir macOS guncellemesi bunu bozarsa uygulama cokmez, `--mirror` moduna duser.
-
-## Yol haritasi
-
-- Faz 1 (bitti): sanal ekran + MJPEG akisi + Safari istemcisi
-- Faz 2: degisen bolgeleri gonderme (kare basina tam JPEG yerine serit/blok guncelleme)
-- Faz 3: iPad iOS 15+ olursa native istemci - H.264 donanim decode, USB uzerinden baglanti, dokunma girisi
-
-Detaylar: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

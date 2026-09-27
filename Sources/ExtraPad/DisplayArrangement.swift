@@ -7,10 +7,10 @@ enum DisplayPosition: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .left:  return "Solda"
-        case .right: return "Sagda"
-        case .above: return "Ustte"
-        case .below: return "Altta"
+        case .left:  return "Left"
+        case .right: return "Right"
+        case .above: return "Above"
+        case .below: return "Below"
         }
     }
 }
@@ -55,7 +55,7 @@ enum DisplayArrangement {
         let result = CGCompleteDisplayConfiguration(config, .forSession)
         if result != .success {
             FileHandle.standardError.write(
-                "[ExtraPad] Ekran duzeni ayarlanamadi (kod \(result.rawValue))\n".data(using: .utf8)!)
+                "[ExtraPad] Could not set the display arrangement (code \(result.rawValue))\n".data(using: .utf8)!)
             return false
         }
         return true

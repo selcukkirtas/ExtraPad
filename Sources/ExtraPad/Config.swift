@@ -104,7 +104,7 @@ struct Config {
                 print(Config.usage)
                 exit(0)
             default:
-                FileHandle.standardError.write("Bilinmeyen secenek: \(key)\n".data(using: .utf8)!)
+                FileHandle.standardError.write("Unknown option: \(key)\n".data(using: .utf8)!)
                 print(Config.usage)
                 exit(2)
             }
@@ -114,15 +114,19 @@ struct Config {
     }
 
     static let usage = """
-    ExtraPad - eski bir iPad'i Mac'e kablosuz ikinci ekran yapar.
+    ExtraPad - turns an old iPad into a wireless second display for your Mac.
 
-    Kullanim: ExtraPad [secenekler]
-      --size WxH      Sanal ekran cozunurlugu (varsayilan 1024x768)
-      --fps N         Saniyedeki kare sayisi (hatirlanir, varsayilan 24)
-      --quality Q     JPEG kalitesi 0.1-1.0 (hatirlanir, varsayilan 0.8)
-      --scale 1|2     2 = HiDPI/Retina mod (varsayilan 1)
-      --refresh Hz    Sanal ekran tazeleme hizi (varsayilan 60)
-      --port N        HTTP portu (varsayilan 8777)
-      --mirror        Sanal ekran yerine ana ekrani yansit
+    Usage: ExtraPad [options]
+      --size WxH      Virtual display resolution (default 1024x768)
+      --fps N         Frames per second (remembered, default 24)
+      --quality Q     JPEG quality 0.1-1.0 (remembered, default 0.8)
+      --scale 1|2     2 = HiDPI/Retina mode (default 1)
+      --refresh Hz    Virtual display refresh rate (default 60)
+      --port N        HTTP port (default 8777)
+      --position DIR  left | right | above | below (remembered, default right)
+      --hud           Show the diagnostic strip on the iPad (also in the menu)
+      --no-input      Disable touch input from the iPad (view only)
+      --no-auth       Disable the access key (trusted networks only)
+      --mirror        Mirror the main display instead of creating a new one
     """
 }

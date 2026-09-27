@@ -84,7 +84,7 @@ final class MJPEGServer {
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
                 FileHandle.standardError.write(
-                    "[ExtraPad] HTTP sunucusu basarisiz: \(error)\n".data(using: .utf8)!)
+                    "[ExtraPad] HTTP server failed: \(error)\n".data(using: .utf8)!)
             }
         }
         listener.start(queue: queue)
@@ -134,7 +134,7 @@ final class MJPEGServer {
         }
         let parts = requestLine.split(separator: " ")
         guard parts.count >= 2, parts[0] == "GET" || parts[0] == "HEAD" else {
-            send(conn, status: "405 Method Not Allowed", body: Data("GET bekleniyor\n".utf8),
+            send(conn, status: "405 Method Not Allowed", body: Data("GET expected\n".utf8),
                  contentType: "text/plain; charset=utf-8")
             return
         }
@@ -197,7 +197,7 @@ final class MJPEGServer {
             if existing == nil { deviceCookie = deviceID }
 
             let address: String
-            if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "bilinmiyor" }
+            if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "unknown" }
 
             // `issueCookie` means this request carried the pairing code or the
             // key - the secret was just verified, so let the device in.
@@ -246,7 +246,7 @@ final class MJPEGServer {
             if let frame = broadcaster.latestFrame {
                 send(conn, status: "200 OK", body: frame, contentType: "image/jpeg")
             } else {
-                send(conn, status: "503 Service Unavailable", body: Data("Henuz kare yok\n".utf8),
+                send(conn, status: "503 Service Unavailable", body: Data("No frame yet\n".utf8),
                      contentType: "text/plain; charset=utf-8")
             }
 
@@ -291,7 +291,7 @@ final class MJPEGServer {
             let fps = query["fps"].flatMap(Int.init)
             if quality == nil && fps == nil {
                 send(conn, status: "400 Bad Request",
-                     body: Data("quality ve/veya fps verin\n".utf8),
+                     body: Data("Provide quality and/or fps\n".utf8),
                      contentType: "text/plain; charset=utf-8")
             } else {
                 if let quality { config.quality = max(0.1, min(1.0, quality)) }
@@ -351,7 +351,7 @@ final class MJPEGServer {
 
     private func startWebSocket(_ conn: NWConnection, requestHead: String) {
         guard let handshake = WebSocket.handshakeResponse(requestHead: requestHead) else {
-            send(conn, status: "400 Bad Request", body: Data("WebSocket yukseltmesi bekleniyor\n".utf8),
+            send(conn, status: "400 Bad Request", body: Data("WebSocket upgrade expected\n".utf8),
                  contentType: "text/plain; charset=utf-8")
             return
         }
@@ -359,7 +359,7 @@ final class MJPEGServer {
 
         let clientID = UInt64(bitPattern: Int64(ObjectIdentifier(conn).hashValue))
         let address: String
-        if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "bilinmiyor" }
+        if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "unknown" }
         clientLock.lock()
         _clients[clientID] = ClientStats(address: address + " (delta)")
         clientLock.unlock()
@@ -503,7 +503,7 @@ final class MJPEGServer {
         if case let .hostPort(host, _) = conn.endpoint {
             address = "\(host)"
         } else {
-            address = "bilinmiyor"
+            address = "unknown"
         }
         clientLock.lock()
         _clients[clientID] = ClientStats(address: address)

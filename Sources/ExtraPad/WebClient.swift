@@ -35,7 +35,7 @@ enum WebClient {
   <img id="screen" alt="">
   <div id="hud" class="__HUDCLASS__">
     <b>ExtraPad</b>
-    <span class="dim" id="info">baglaniyor&hellip;</span>
+    <span class="dim" id="info">connecting&hellip;</span>
   </div>
 <script>
 (function () {
@@ -82,7 +82,7 @@ enum WebClient {
   // A dropped Wi-Fi frame ends the multipart response; reconnect with backoff.
   img.onerror = function () {
     retries = retries + 1;
-    setInfo("baglanti kesildi, yeniden deneniyor (" + retries + ")");
+    setInfo("disconnected, retrying (" + retries + ")");
     hud.className = "";
     setTimeout(connect, Math.min(1000 * retries, 5000));
   };
@@ -94,7 +94,7 @@ enum WebClient {
   document.addEventListener("touchstart", toggleHud, false);
   document.addEventListener("click", toggleHud, false);
 
-  setInfo("__W__x__H__ &middot; olculuyor&hellip;");
+  setInfo("__W__x__H__ &middot; measuring&hellip;");
   connect();
 }());
 </script>
@@ -139,7 +139,7 @@ enum WebClient {
 </head>
 <body>
   <canvas id="screen" width="__W__" height="__H__"></canvas>
-  <div id="hud" class="hidden"><b>ExtraPad</b> <span class="dim" id="info">baglaniyor&hellip;</span></div>
+  <div id="hud" class="hidden"><b>ExtraPad</b> <span class="dim" id="info">connecting&hellip;</span></div>
 <script>
 (function () {
   "use strict";
@@ -204,8 +204,8 @@ enum WebClient {
     var fps = (frames * 1000 / elapsed).toFixed(1);
     var mbit = (bytes * 8 / (elapsed / 1000) / 1000000).toFixed(2);
     var perFrame = frames > 0 ? (decodeMs / frames).toFixed(0) : "0";
-    info.innerHTML = fps + " fps &middot; " + mbit + " Mbit/s &middot; cizim " +
-                     perFrame + " ms &middot; kuyruk " + queue.length;
+    info.innerHTML = fps + " fps &middot; " + mbit + " Mbit/s &middot; draw " +
+                     perFrame + " ms &middot; queue " + queue.length;
     frames = 0; regions = 0; bytes = 0; decodeMs = 0; windowStart = now;
   }
 
@@ -219,7 +219,7 @@ enum WebClient {
 
     ws.onopen = function () {
       retries = 0;
-      info.innerHTML = "bagli, ilk kare bekleniyor&hellip;";
+      info.innerHTML = "connected, waiting for the first frame&hellip;";
     };
 
     ws.onmessage = function (event) {
@@ -255,7 +255,7 @@ enum WebClient {
 
     ws.onclose = function () {
       retries = retries + 1;
-      info.innerHTML = "baglanti kesildi, yeniden deneniyor (" + retries + ")";
+      info.innerHTML = "disconnected, retrying (" + retries + ")";
       setTimeout(connect, Math.min(500 * retries, 5000));
     };
 
@@ -317,7 +317,7 @@ enum WebClient {
   canvas.addEventListener("mouseup", function (e) { sendInput("U", e); }, false);
 
   if (!window.WebSocket) {
-    info.innerHTML = "bu Safari WebSocket desteklemiyor - / adresini kullanin";
+    info.innerHTML = "this Safari has no WebSocket - use /mjpeg instead";
     return;
   }
   connect();
@@ -355,10 +355,10 @@ enum WebClient {
 </head>
 <body>
   <div class="card">
-    <h1>Once baglanmaniz gerekiyor</h1>
-    <p>Bu adresin ana sayfasini acin ve Mac'teki menu cubugunda yazan alti haneli
-       kodu girin.</p>
-    <p style="margin-top:1em"><a href="/" style="color:#8ec7fb">Ana sayfaya git</a></p>
+    <h1>You need to connect first</h1>
+    <p>Open this address' home page and enter the six-digit code shown in the
+       menu bar on your Mac.</p>
+    <p style="margin-top:1em"><a href="/" style="color:#8ec7fb">Go to the home page</a></p>
   </div>
 </body>
 </html>
@@ -396,9 +396,9 @@ enum WebClient {
 </head>
 <body>
   <div class="card">
-    <h1>Mac'te onay bekleniyor</h1>
-    <p>Mac'inizde bu cihaz icin bir soru cikti. <b>Izin Ver</b> dediginizde ekran
-       burada acilacak.</p>
+    <h1>Waiting for approval on the Mac</h1>
+    <p>Your Mac is asking about this device. Choose <b>Allow</b> there and the
+       screen will appear here.</p>
     <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
   </div>
 <script>
@@ -434,9 +434,9 @@ enum WebClient {
 </head>
 <body>
   <div class="card">
-    <h1>Bu cihaza izin verilmedi</h1>
-    <p>Mac'te menu cubugundaki ExtraPad simgesinden cihaz listesini
-       sifirlayarak yeniden deneyebilirsiniz.</p>
+    <h1>This device was not allowed</h1>
+    <p>You can try again after clearing the device list from the ExtraPad
+       icon in your Mac's menu bar.</p>
   </div>
 </body>
 </html>
@@ -448,8 +448,8 @@ enum WebClient {
     /// typing a long key into the URL bar on an old iPad.
     static func pairingPage(wrong: Bool) -> String {
         let message = wrong
-            ? "<p class=\"bad\">Kod dogru degil. Mac'teki menuden tekrar bakin.</p>"
-            : "<p>Mac'te menu cubugundaki ExtraPad simgesine tiklayin, orada yazan alti haneli kodu girin.</p>"
+            ? "<p class=\"bad\">That code is not right. Check the menu on your Mac again.</p>"
+            : "<p>Click the ExtraPad icon in your Mac's menu bar and enter the six-digit code shown there.</p>"
         return #"""
 <!DOCTYPE html>
 <html>
@@ -486,7 +486,7 @@ enum WebClient {
     <form method="GET" action="/pair">
       <input name="code" type="tel" maxlength="6" pattern="[0-9]*"
              placeholder="000000" autofocus>
-      <button type="submit">Baglan</button>
+      <button type="submit">Connect</button>
     </form>
   </div>
 </body>
@@ -515,9 +515,9 @@ enum WebClient {
 </head>
 <body>
   <div class="card">
-    <h1>Bu adres yok</h1>
-    <p>ExtraPad calisiyor, ama istediginiz sayfa burada degil.</p>
-    <p><a href="/">Ana sayfaya git</a></p>
+    <h1>No such page</h1>
+    <p>ExtraPad is running, but the page you asked for is not here.</p>
+    <p><a href="/">Go to the home page</a></p>
   </div>
 </body>
 </html>

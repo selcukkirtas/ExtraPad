@@ -17,7 +17,7 @@ echo "==> swift build -c $CONFIGURATION"
 swift build --package-path "$ROOT" -c "$CONFIGURATION"
 BINARY="$(swift build --package-path "$ROOT" -c "$CONFIGURATION" --show-bin-path)/ExtraPad"
 
-echo "==> paketleniyor: $APP"
+echo "==> bundling: $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/ExtraPad"
@@ -38,7 +38,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <!-- Menu bar only, no Dock icon. -->
     <key>LSUIElement</key>                   <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>iPad'inize ekran goruntusu gondermek icin yerel aginiza erisim gerekir.</string>
+    <string>ExtraPad needs your local network to send the screen to your iPad.</string>
     <key>NSBonjourServices</key>
     <array><string>_http._tcp</string></array>
 </dict>
@@ -63,15 +63,15 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 if [ -n "$IDENTITY" ]; then
-  echo "==> imzalaniyor: $IDENTITY"
+  echo "==> signing with: $IDENTITY"
   codesign --force --sign "$IDENTITY" --timestamp=none "$APP" >/dev/null
 else
-  echo "==> ad-hoc imzalaniyor (kod imzalama sertifikasi bulunamadi)"
-  echo "    UYARI: her derlemeden sonra Ekran Kaydi iznini yeniden vermeniz gerekecek."
+  echo "==> signing ad-hoc (no code signing certificate found)"
+  echo "    WARNING: you will have to grant Screen Recording again after every build."
   codesign --force --sign - --timestamp=none "$APP" >/dev/null
 fi
 
-codesign --verify --strict "$APP" || { echo "HATA: imza dogrulanamadi"; exit 1; }
+codesign --verify --strict "$APP" || { echo "ERROR: signature could not be verified"; exit 1; }
 
 # Convenience pointer so the app is still reachable from the project directory.
 mkdir -p "$ROOT/build"
@@ -79,6 +79,6 @@ rm -f "$ROOT/build/ExtraPad.app"
 ln -s "$APP" "$ROOT/build/ExtraPad.app"
 
 echo
-echo "Hazir: $APP"
-echo "Calistir:  open \"$APP\""
-echo "Loglari gormek icin: \"$APP/Contents/MacOS/ExtraPad\""
+echo "Ready: $APP"
+echo "Run:       open \"$APP\""
+echo "For logs:  \"$APP/Contents/MacOS/ExtraPad\""

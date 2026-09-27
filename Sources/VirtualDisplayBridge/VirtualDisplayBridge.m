@@ -42,7 +42,7 @@
 static void EPTrySet(id target, NSString *key, id value) {
     @try { [target setValue:value forKey:key]; }
     @catch (NSException *e) {
-        NSLog(@"[ExtraPad] virtual display: '%@' ayarlanamadi (%@)", key, e.reason);
+        NSLog(@"[ExtraPad] virtual display: could not set '%@' (%@)", key, e.reason);
     }
 }
 
@@ -66,7 +66,7 @@ static void EPTrySet(id target, NSString *key, id value) {
     self = [super init];
     if (!self) { return nil; }
     if (!EPVirtualDisplay.supported) {
-        NSLog(@"[ExtraPad] Bu macOS surumunde CGVirtualDisplay bulunamadi.");
+        NSLog(@"[ExtraPad] CGVirtualDisplay is not available on this macOS build.");
         return nil;
     }
 
@@ -85,13 +85,13 @@ static void EPTrySet(id target, NSString *key, id value) {
     EPTrySet(descriptor, @"serialNum", @(0x0001));
     EPTrySet(descriptor, @"queue", dispatch_get_main_queue());
     EPTrySet(descriptor, @"terminationHandler", ^(id a, id b) {
-        NSLog(@"[ExtraPad] Sanal ekran sonlandirildi.");
+        NSLog(@"[ExtraPad] Virtual display terminated.");
     });
 
     _display = [[NSClassFromString(@"CGVirtualDisplay") alloc]
                 initWithDescriptor:descriptor];
     if (!_display) {
-        NSLog(@"[ExtraPad] Sanal ekran olusturulamadi.");
+        NSLog(@"[ExtraPad] Could not create the virtual display.");
         return nil;
     }
 
@@ -107,13 +107,13 @@ static void EPTrySet(id target, NSString *key, id value) {
     EPTrySet(settings, @"modes", @[mode]);
 
     if (![_display applySettings:settings]) {
-        NSLog(@"[ExtraPad] Sanal ekran modu uygulanamadi.");
+        NSLog(@"[ExtraPad] Could not apply the virtual display mode.");
         _display = nil;
         return nil;
     }
 
     _displayID = _display.displayID;
-    NSLog(@"[ExtraPad] Sanal ekran hazir: id=%u %lux%lu@%.0fHz",
+    NSLog(@"[ExtraPad] Virtual display ready: id=%u %lux%lu@%.0fHz",
           _displayID, (unsigned long)pixelsWide, (unsigned long)pixelsHigh, refreshRate);
     return self;
 }

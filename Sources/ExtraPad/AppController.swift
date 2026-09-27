@@ -13,7 +13,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
     private var urls: [String] = []
-    private var statusLine = "baslatiliyor..."
+    private var statusLine = "starting..."
     private var needsScreenPermission = false
     private var needsInputPermission = false
     private var injector: InputInjector?
@@ -49,7 +49,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         var captureID: CGDirectDisplayID = 0
 
         if config.mirror {
-            statusLine = "ana ekran yansitiliyor"
+            statusLine = "mirroring the main display"
         } else if EPVirtualDisplay.supported {
             let display = EPVirtualDisplay(
                 name: "ExtraPad",
@@ -65,19 +65,19 @@ final class AppController: NSObject, NSApplicationDelegate {
                 // would show a squashed copy of the built-in screen.
                 DisplayArrangement.arrange(display.displayID, position: config.position)
                 if DisplayArrangement.isMirroring(display.displayID) {
-                    statusLine = "sanal ekran yansitma modunda - Ayarlar > Ekranlar'dan 'Genislet' secin"
-                    log("[ExtraPad] UYARI: \(statusLine)")
+                    statusLine = "virtual display is mirroring - choose Extend in Settings > Displays"
+                    log("[ExtraPad] WARNING: \(statusLine)")
                 } else {
-                    statusLine = "sanal ekran aktif"
+                    statusLine = "virtual display active"
                 }
             } else {
                 config.mirror = true
-                statusLine = "sanal ekran acilamadi, yansitmaya dusuldu"
+                statusLine = "could not create a virtual display, fell back to mirroring"
                 log(statusLine)
             }
         } else {
             config.mirror = true
-            statusLine = "bu macOS'ta sanal ekran yok, yansitiliyor"
+            statusLine = "no virtual display on this macOS, mirroring instead"
             log(statusLine)
         }
 
@@ -114,7 +114,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             try server.start()
             self.server = server
         } catch {
-            fail("HTTP sunucusu \(config.port) portunda baslatilamadi: \(error.localizedDescription)")
+            fail("Could not start the HTTP server on port \(config.port): \(error.localizedDescription)")
             return
         }
 
@@ -122,7 +122,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         // fails with an opaque TCC error on first run.
         if !CGPreflightScreenCaptureAccess() {
             needsScreenPermission = true
-            statusLine = "Ekran Kaydi izni bekleniyor"
+            statusLine = "waiting for Screen Recording permission"
             rebuildMenu()
             CGRequestScreenCaptureAccess()
         }
@@ -138,15 +138,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         log("""
 
         ────────────────────────────────────────────────
-         ExtraPad hazir - \(statusLine)
-         \(config.width)x\(config.height) @ \(config.fps) fps, kalite \(config.quality)
+         ExtraPad ready - \(statusLine)
+         \(config.width)x\(config.height) @ \(config.fps) fps, quality \(config.quality)
 
-         iPad'de Safari'yi ac ve su adrese git:
+         Open Safari on the iPad and go to:
         \(urls.map { "   \($0)" }.joined(separator: "\n"))
 
-         Sonra sorulan kodu gir: \(config.auth ? Auth.pairingCode : "(anahtar kapali)")
+         Then enter the code it asks for: \(config.auth ? Auth.pairingCode : "(access key disabled)")
 
-         Ipucu: Paylas > Ana Ekrana Ekle ile tam ekran calisir.
+         Tip: Share > Add to Home Screen runs it full screen.
         ────────────────────────────────────────────────
         """)
         rebuildMenu()
@@ -176,8 +176,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             } catch {
                 needsScreenPermission = !CGPreflightScreenCaptureAccess()
                 statusLine = needsScreenPermission
-                    ? "Ekran Kaydi izni gerekli"
-                    : "yakalama basarisiz, tekrar deneniyor"
+                    ? "Screen Recording permission required"
+                    : "capture failed, retrying"
                 if attempt == 1 || attempt % 10 == 0 {
                     log("[ExtraPad] \(statusLine): \(error.localizedDescription)")
                 }
@@ -189,11 +189,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func fail(_ message: String) {
-        statusLine = "hata"
-        log("[ExtraPad] HATA: \(message)")
+        statusLine = "error"
+        log("[ExtraPad] ERROR: \(message)")
         rebuildMenu()
         let alert = NSAlert()
-        alert.messageText = "ExtraPad baslatilamadi"
+        alert.messageText = "ExtraPad could not start"
         alert.informativeText = message
         alert.alertStyle = .critical
         alert.runModal()
@@ -236,14 +236,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         let clients = server?.activeStreams ?? 0
         let dropped = streamer?.droppedFrames ?? 0
         let detail = NSMenuItem(
-            title: "\(config.width)x\(config.height) · \(config.fps) fps · \(clients) cihaz · \(dropped) atlanan",
+            title: "\(config.width)x\(config.height) · \(config.fps) fps · \(clients) device(s) · \(dropped) dropped",
             action: nil, keyEquivalent: "")
         detail.isEnabled = false
         menu.addItem(detail)
 
         if needsInputPermission {
             menu.addItem(.separator())
-            let grant = NSMenuItem(title: "Dokunma girisi icin Erisilebilirlik iznini ac...",
+            let grant = NSMenuItem(title: "Open Accessibility settings for touch input...",
                                    action: #selector(openAccessibilitySettings), keyEquivalent: "")
             grant.target = self
             menu.addItem(grant)
@@ -251,12 +251,12 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if needsScreenPermission {
             menu.addItem(.separator())
-            let grant = NSMenuItem(title: "Ekran Kaydi iznini ac...",
+            let grant = NSMenuItem(title: "Open Screen Recording settings...",
                                    action: #selector(openScreenRecordingSettings),
                                    keyEquivalent: "")
             grant.target = self
             menu.addItem(grant)
-            let hint = NSMenuItem(title: "Izni verdikten sonra ExtraPad'i yeniden baslatin",
+            let hint = NSMenuItem(title: "Restart ExtraPad after granting it",
                                   action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
@@ -264,7 +264,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if !urls.isEmpty {
             menu.addItem(.separator())
-            let label = NSMenuItem(title: "iPad'de ac (tiklayinca kopyalanir):", action: nil, keyEquivalent: "")
+            let label = NSMenuItem(title: "Open on the iPad (click to copy):", action: nil, keyEquivalent: "")
             label.isEnabled = false
             menu.addItem(label)
             for url in urls {
@@ -276,7 +276,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        let hudItem = NSMenuItem(title: "iPad'de teshis seridi",
+        let hudItem = NSMenuItem(title: "Diagnostic strip on iPad",
                                  action: #selector(toggleHUD), keyEquivalent: "")
         hudItem.target = self
         hudItem.state = config.hud ? .on : .off
@@ -284,7 +284,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if virtualDisplay != nil {
             menu.addItem(.separator())
-            let positionItem = NSMenuItem(title: "Konum", action: nil, keyEquivalent: "")
+            let positionItem = NSMenuItem(title: "Position", action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             for option in DisplayPosition.allCases {
                 let entry = NSMenuItem(title: option.label,
@@ -305,7 +305,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             // nothing about the present.
             let connected = server?.connectedAddresses ?? []
             let header = NSMenuItem(
-                title: connected.isEmpty ? "Bagli cihaz yok" : "Bagli cihazlar: \(connected.count)",
+                title: connected.isEmpty ? "No devices connected" : "Connected devices: \(connected.count)",
                 action: nil, keyEquivalent: "")
             header.isEnabled = false
             menu.addItem(header)
@@ -315,35 +315,35 @@ final class AppController: NSObject, NSApplicationDelegate {
                 menu.addItem(item)
             }
             if !(server?.devices.approvedDevices.isEmpty ?? true) {
-                let forget = NSMenuItem(title: "Kayitli cihaz izinlerini sil",
+                let forget = NSMenuItem(title: "Clear saved device approvals",
                                         action: #selector(forgetDevices), keyEquivalent: "")
                 forget.target = self
                 menu.addItem(forget)
             }
 
-            let code = NSMenuItem(title: "Baglanti kodu:  " + Auth.pairingCode,
+            let code = NSMenuItem(title: "Pairing code:  " + Auth.pairingCode,
                                   action: #selector(copyCode(_:)), keyEquivalent: "")
             code.target = self
             menu.addItem(code)
 
-            let rotate = NSMenuItem(title: "Yeni kod ve anahtar uret",
+            let rotate = NSMenuItem(title: "Generate a new code and key",
                                     action: #selector(rotateKey), keyEquivalent: "")
             rotate.target = self
             menu.addItem(rotate)
-            let note = NSMenuItem(title: "(mevcut cihazlarin yeniden baglanmasi gerekir)",
+            let note = NSMenuItem(title: "(connected devices will have to pair again)",
                                   action: nil, keyEquivalent: "")
             note.isEnabled = false
             menu.addItem(note)
         } else {
             menu.addItem(.separator())
-            let warning = NSMenuItem(title: "UYARI: erisim anahtari kapali",
+            let warning = NSMenuItem(title: "WARNING: access key is disabled",
                                      action: nil, keyEquivalent: "")
             warning.isEnabled = false
             menu.addItem(warning)
         }
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Cikis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
     }
 
@@ -371,16 +371,16 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// the screen and the mouse, so it should interrupt.
     private func askAbout(_ device: DeviceRegistry.Device) {
         let consequence = config.input
-            ? "ekrani gorecek ve fareyi surebilecek"
-            : "ekrani gorecek"
+            ? "see your screen and control the mouse"
+            : "see your screen"
         let alert = NSAlert()
-        alert.messageText = "Yeni bir cihaz baglanmak istiyor"
-        alert.informativeText = "Adres: " + device.address + "\n\n"
-            + "Izin verirseniz bu cihaz " + consequence + ".\n"
-            + "Beklemediginiz bir cihazsa Reddet'i secin."
+        alert.messageText = "A new device wants to connect"
+        alert.informativeText = "Address: " + device.address + "\n\n"
+            + "If you allow it, this device will be able to " + consequence + ".\n"
+            + "If you were not expecting it, choose Deny."
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Izin Ver")
-        alert.addButton(withTitle: "Reddet")
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Deny")
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
             server?.devices.approve(device)
@@ -392,10 +392,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     @objc private func forgetDevices() {
         let alert = NSAlert()
-        alert.messageText = "Tum cihaz izinleri silinsin mi?"
-        alert.informativeText = "Her cihaz icin yeniden onay sorulacak."
-        alert.addButton(withTitle: "Sil")
-        alert.addButton(withTitle: "Vazgec")
+        alert.messageText = "Clear all device approvals?"
+        alert.informativeText = "Every device will be asked for again."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
             server?.devices.forgetAll()
             rebuildMenu()
@@ -412,9 +412,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         urls = buildURLs()
         rebuildMenu()
         let alert = NSAlert()
-        alert.messageText = "Yeni kod ve anahtar uretildi"
-        alert.informativeText = "Bagli cihazlar dustu. Menudeki yeni adresi iPad'de acin ve "
-            + "ana ekran kisayolunu yenileyin - eski kisayol artik calismaz."
+        alert.messageText = "New code and key generated"
+        alert.informativeText = "Connected devices were dropped. Open the new address from the "
+            + "menu on the iPad and recreate its home-screen shortcut - the old one no longer works."
         alert.runModal()
     }
 

@@ -15,9 +15,9 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         var errorDescription: String? {
             switch self {
             case .displayNotFound(let id):
-                return "Yakalanacak ekran bulunamadi (displayID \(id))."
+                return "Could not find the display to capture (displayID \(id))."
             case .noDisplays:
-                return "Paylasilabilir ekran bulunamadi. Ekran Kaydi izni verildi mi?"
+                return "No shareable displays found. Has Screen Recording permission been granted?"
             }
         }
     }
@@ -194,6 +194,6 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         FileHandle.standardError.write(
-            "[ExtraPad] Yakalama durdu: \(error.localizedDescription)\n".data(using: .utf8)!)
+            "[ExtraPad] Capture stopped: \(error.localizedDescription)\n".data(using: .utf8)!)
     }
 }
