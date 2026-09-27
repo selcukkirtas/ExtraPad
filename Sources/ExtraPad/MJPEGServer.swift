@@ -16,6 +16,11 @@ final class MJPEGServer {
     let devices = DeviceRegistry()
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
+    /// Second listener, TLS, for clients that can pin a certificate. Safari on
+    /// iOS 9 cannot, so the plain one has to stay.
+    private var secureListener: NWListener?
+    private(set) var tlsFingerprint: String?
+    var securePort: UInt16 { config.port &+ 1 }
 
     /// What the server actually pushed to one client. Tells apart "the stream
     /// stalled" from "the stream is fine but the browser is not rendering it".
@@ -78,14 +83,13 @@ final class MJPEGServer {
     }
 
     func start() throws {
-        let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
-        // Nagle would hold back the tail of a frame while we wait for the next.
-        if let tcp = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
-            tcp.noDelay = true
-        }
+        // TLS first: its fingerprint goes into the Bonjour record the plain
+        // listener publishes, so a client knows what to expect before it
+        // connects to anything.
+        startSecureListener()
 
-        let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: config.port)!)
+        let listener = try NWListener(using: tcpParameters(),
+                                      on: NWEndpoint.Port(rawValue: config.port)!)
 
         // A dedicated service type rather than the generic _http._tcp: the iPad
         // app browses for exactly this, and the TXT record carries what it needs
@@ -98,6 +102,10 @@ final class MJPEGServer {
         txt["input"] = config.input ? "1" : "0"
         txt["size"] = "\(config.width)x\(config.height)"
         txt["host"] = NetworkInfo.friendlyHostName
+        if let tlsFingerprint {
+            txt["tls"] = String(securePort)
+            txt["fp"] = tlsFingerprint
+        }
 
         listener.service = NWListener.Service(name: NetworkInfo.friendlyHostName,
                                               type: WireNames.bonjourServiceType,
@@ -118,6 +126,57 @@ final class MJPEGServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        secureListener?.cancel()
+        secureListener = nil
+    }
+
+    private func tcpParameters() -> NWParameters {
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        // Nagle would hold back the tail of a frame while we wait for the next.
+        if let tcp = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
+            tcp.noDelay = true
+        }
+        return params
+    }
+
+    /// Optional by design: without a certificate the app still works, just
+    /// without the encrypted path. Failing to start entirely would be worse
+    /// than running as it did before TLS existed.
+    private func startSecureListener() {
+        guard let identity = TLSIdentity.load() else {
+            FileHandle.standardError.write(
+                "[ExtraPad] No TLS certificate; serving plain HTTP only\n".data(using: .utf8)!)
+            return
+        }
+        tlsFingerprint = identity.fingerprint
+
+        let tls = NWProtocolTLS.Options()
+        sec_protocol_options_set_local_identity(tls.securityProtocolOptions, identity.identity)
+        sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
+
+        let params = NWParameters(tls: tls)
+        params.allowLocalEndpointReuse = true
+        if let tcp = params.defaultProtocolStack.internetProtocol as? NWProtocolTCP.Options {
+            tcp.noDelay = true
+        }
+
+        do {
+            let listener = try NWListener(using: params,
+                                          on: NWEndpoint.Port(rawValue: securePort)!)
+            listener.newConnectionHandler = { [weak self] conn in self?.accept(conn) }
+            listener.stateUpdateHandler = { state in
+                if case let .failed(error) = state {
+                    FileHandle.standardError.write(
+                        "[ExtraPad] TLS listener failed: \(error)\n".data(using: .utf8)!)
+                }
+            }
+            listener.start(queue: queue)
+            secureListener = listener
+        } catch {
+            FileHandle.standardError.write(
+                "[ExtraPad] Could not start the TLS listener: \(error)\n".data(using: .utf8)!)
+        }
     }
 
     // MARK: - Connection handling

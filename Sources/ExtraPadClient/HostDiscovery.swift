@@ -9,6 +9,10 @@ struct DiscoveredHost: Identifiable, Equatable {
     let protocolVersion: Int
     let requiresCode: Bool
     let displaySize: String
+    /// Present when the host offers TLS. The fingerprint is what the client
+    /// pins, and it arrives here rather than being learned on first connect.
+    let tlsPort: UInt16?
+    let tlsFingerprint: String?
 
     static func == (a: DiscoveredHost, b: DiscoveredHost) -> Bool { a.id == b.id }
 }
@@ -77,15 +81,20 @@ final class HostDiscovery: ObservableObject {
             var requiresCode = true
             var size = ""
             var friendly = name
+            var tlsPort: UInt16?
+            var fingerprint: String?
             if case let .bonjour(txt) = result.metadata {
                 version = txt["v"].flatMap(Int.init) ?? 0
                 requiresCode = (txt["auth"] ?? "1") == "1"
                 size = txt["size"] ?? ""
                 friendly = txt["host"] ?? name
+                tlsPort = txt["tls"].flatMap(UInt16.init)
+                fingerprint = txt["fp"]
             }
             return DiscoveredHost(id: name, name: friendly, endpoint: result.endpoint,
                                   protocolVersion: version, requiresCode: requiresCode,
-                                  displaySize: size)
+                                  displaySize: size, tlsPort: tlsPort,
+                                  tlsFingerprint: fingerprint)
         }
         .sorted { $0.name < $1.name }
     }

@@ -149,6 +149,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         \(urls.map { "   \($0)" }.joined(separator: "\n"))
 
          Then enter the code it asks for: \(config.auth ? Auth.pairingCode : "(access key disabled)")
+        \(server.tlsFingerprint != nil
+            ? "\n TLS is on for native clients (port \(server.securePort)); the web client stays on plain HTTP."
+            : "\n TLS is off - no certificate could be created.")
 
          Tip: Share > Add to Home Screen runs it full screen.
         ────────────────────────────────────────────────

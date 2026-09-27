@@ -30,6 +30,7 @@ final class HostConnection: ObservableObject {
     private let baseURL: URL
     private let hostID: String
     private let session: URLSession
+    private var trust: PinnedTrust?
     private var socket: URLSessionWebSocketTask?
     private let canvas = ScreenCanvas(size: CGSize(width: 1024, height: 768))
     private let video = VideoDecoder()
@@ -45,13 +46,27 @@ final class HostConnection: ObservableObject {
     private var wantsConnection = false
     private var hostProtocolVersion = WireProtocol.atlas
 
-    init(baseURL: URL, hostID: String) {
+    private(set) var isEncrypted = false
+
+    init(baseURL: URL, hostID: String, tlsFingerprint: String? = nil) {
         self.baseURL = baseURL
         self.hostID = hostID
+        self.isEncrypted = baseURL.scheme == "https"
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
-        self.session = URLSession(configuration: configuration)
+        // A self-signed certificate is refused by the default trust evaluation,
+        // so the session is given a delegate that checks the fingerprint
+        // instead. Without a fingerprint there is nothing to check against and
+        // the connection stays plain.
+        if let tlsFingerprint, baseURL.scheme == "https" {
+            let pinned = PinnedTrust(fingerprint: tlsFingerprint)
+            self.trust = pinned
+            self.session = URLSession(configuration: configuration,
+                                      delegate: pinned, delegateQueue: nil)
+        } else {
+            self.session = URLSession(configuration: configuration)
+        }
         restoreSavedPairing()
 
         video.onFrame = { [weak self] frame in
@@ -133,6 +148,11 @@ final class HostConnection: ObservableObject {
             }
             wantsConnection = true
             rememberPairing()
+            // Ask what the host speaks before opening the stream. Without this
+            // a client that has just paired falls back to the oldest format,
+            // because the version is only learned on the path that skips
+            // pairing entirely.
+            _ = await canReachScreen()
             await openStream()
         } catch {
             state = .failed(error.localizedDescription)
@@ -169,7 +189,7 @@ final class HostConnection: ObservableObject {
     private func openStream() async {
         var components = URLComponents(url: baseURL.appendingPathComponent("ws"),
                                        resolvingAgainstBaseURL: false)
-        components?.scheme = "ws"
+        components?.scheme = (baseURL.scheme == "https") ? "wss" : "ws"
         // Ask for the best the host offers; it refuses anything it cannot
         // serve, so this cannot silently produce an unreadable stream.
         negotiatedVersion = hostProtocolVersion

@@ -13,8 +13,11 @@ import ExtraPadProtocol
 /// refresh to compensate.
 final class VideoEncoder {
 
-    /// Called with each encoded access unit, already in wire form.
-    var onMessage: ((Data) -> Void)?
+    /// Called with each encoded access unit, already in wire form. The flag
+    /// marks a message a client can resynchronise on - an IDR or the parameter
+    /// sets. Without it a client that falls behind is skipped forever, because
+    /// the recovery path waits for a message nobody ever marks.
+    var onMessage: ((Data, Bool) -> Void)?
 
     private var session: VTCompressionSession?
     private var width = 0
@@ -134,7 +137,7 @@ final class VideoEncoder {
             lock.unlock()
             // Only worth re-sending when they actually changed; a client that
             // just joined is given them directly.
-            if changed { onMessage?(message) }
+            if changed { onMessage?(message, true) }
         }
 
         guard let block = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
@@ -146,7 +149,8 @@ final class VideoEncoder {
 
         // VideoToolbox hands back AVCC already: length-prefixed NAL units.
         let avcc = Data(bytes: pointer, count: length)
-        onMessage?(VideoMessage.frame(isKeyframe: isKeyframe, avcc: avcc).encoded())
+        onMessage?(VideoMessage.frame(isKeyframe: isKeyframe, avcc: avcc).encoded(),
+                   isKeyframe)
     }
 
     private static func isKeyframe(_ sampleBuffer: CMSampleBuffer) -> Bool {

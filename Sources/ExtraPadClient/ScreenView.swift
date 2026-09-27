@@ -39,9 +39,14 @@ struct ScreenView: View {
                 Image(systemName: "xmark.circle.fill").imageScale(.large)
             }
             Spacer(minLength: 8)
-            Text(hostName)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                if connection.isEncrypted {
+                    Image(systemName: "lock.fill").font(.caption2)
+                }
+                Text(hostName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
             Spacer(minLength: 8)
             if case let .reconnecting(attempt) = connection.state {
                 Text("reconnecting (\(attempt))")

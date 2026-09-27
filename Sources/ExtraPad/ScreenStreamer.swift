@@ -35,8 +35,9 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     private let deltaEncoder = DeltaEncoder()
     private lazy var videoEncoder: VideoEncoder = {
         let encoder = VideoEncoder(fps: config.fps)
-        encoder.onMessage = { [weak self] message in
-            self?.videoBroadcaster.publish(PatchGroup(messages: [message], isKeyframe: false))
+        encoder.onMessage = { [weak self] message, resynchronises in
+            self?.videoBroadcaster.publish(
+                PatchGroup(messages: [message], isKeyframe: resynchronises))
         }
         return encoder
     }()

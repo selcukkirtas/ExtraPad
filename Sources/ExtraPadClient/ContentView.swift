@@ -77,6 +77,7 @@ struct ContentView: View {
         var parts: [String] = []
         if !host.displaySize.isEmpty { parts.append(host.displaySize) }
         parts.append(host.requiresCode ? "code required" : "open")
+        if host.tlsFingerprint != nil { parts.append("encrypted") }
         if !WireProtocol.canServe(host.protocolVersion) {
             parts.append("needs a newer app")
         }
@@ -90,8 +91,16 @@ struct ContentView: View {
             return
         }
         do {
-            let url = try await discovery.resolve(host)
-            let connection = HostConnection(baseURL: url, hostID: host.id)
+            var url = try await discovery.resolve(host)
+            // Prefer the encrypted listener when the host advertises one.
+            if let tlsPort = host.tlsPort, host.tlsFingerprint != nil,
+               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                components.scheme = "https"
+                components.port = Int(tlsPort)
+                if let secure = components.url { url = secure }
+            }
+            let connection = HostConnection(baseURL: url, hostID: host.id,
+                                            tlsFingerprint: host.tlsFingerprint)
             self.connection = connection
             self.chosen = host
             discovery.stop()
