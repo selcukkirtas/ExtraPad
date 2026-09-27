@@ -1,6 +1,21 @@
 # Plan: App Store distribution, a native iPad app, and discovery
 
-Status: proposal. Nothing here has been built. The current app is untouched.
+Status: decisions made, Phase A in progress.
+
+## Decisions
+
+| Question | Answer |
+|---|---|
+| Mac distribution | Direct download, Developer ID signed and notarized |
+| Pricing | iPad app paid once; Mac host free |
+| Developer Program | Not yet purchased - blocks only notarization and submission |
+| Native client floor | iOS 15 |
+| Starting point | Phase A |
+
+Individual vs Organization membership is still open and worth deciding before
+purchase: Organization sells under a company name but needs a D-U-N-S number and
+can take weeks; Individual is approved in a day or two but shows a personal name
+as the seller. Changing it later is painful.
 
 ## 1. The blocker to settle first
 
@@ -171,16 +186,15 @@ review notes, demo mode. Submit.
 
 **Phase E - The rest.** Wired USB, Pencil input, multiple independent displays.
 
-## 9. Open questions for you
+## 9. Phase A breakdown
 
-1. **Is distributing the Mac app outside the App Store acceptable?** If not, the
-   project has to lose the virtual display and the input - and at that point it
-   is a different product. This is the decision everything else hangs on.
-2. **Free, paid, or free client plus paid host?** It affects the App Store
-   setup, and a paid app raises review expectations.
-3. **Is a Developer Program membership already in place?** The signing identity
-   on this machine is a personal "Apple Development" certificate, which is not
-   enough for either distribution route.
-4. **How far back should the native app reach?** iOS 15 is the floor this
-   toolchain allows, but targeting 15 rather than something newer costs some
-   modern API convenience.
+| Step | Needs membership | State |
+|---|---|---|
+| A1 - Protocol version and stale-client recovery | no | |
+| A2 - `_extrapad._tcp` advertising with a TXT record | no | |
+| A3 - Notarization wired into the build script | written now, runs later | |
+| A4 - Split into shared modules | no | |
+
+A4 is the largest and the one that enables Phase B, so it is deliberately last:
+each earlier step is small enough to verify on its own, and the old iPad has to
+keep working after every one of them.

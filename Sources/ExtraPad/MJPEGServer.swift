@@ -239,7 +239,23 @@ final class MJPEGServer {
         case "/stream":
             startStream(conn)
 
+        case "/version":
+            let json = """
+            {"protocol":\(ExtraPadProtocol.version),\
+            "minimum":\(ExtraPadProtocol.minimumSupportedVersion)}
+            """
+            send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
+
         case "/ws":
+            // A client that names a version we cannot serve is refused clearly
+            // rather than being left to misparse the stream.
+            if let raw = query["v"], let clientVersion = Int(raw),
+               !ExtraPadProtocol.canServe(clientVersion) {
+                send(conn, status: "409 Conflict",
+                     body: Data("Protocol \(clientVersion) not supported; host speaks \(ExtraPadProtocol.version)\n".utf8),
+                     contentType: "text/plain; charset=utf-8")
+                return
+            }
             startWebSocket(conn, requestHead: requestHead)
 
         case "/snapshot":

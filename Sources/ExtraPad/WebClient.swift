@@ -112,7 +112,7 @@ enum WebClient {
     /// them onto a canvas. Still ES5 - and deliberately light on per-message
     /// JavaScript, because a home-screen web app on an iPad 2 may be running
     /// without a JIT. The decoding stays in Safari's native JPEG path.
-    static func deltaPage(width: Int, height: Int) -> String {
+    static func deltaPage(width: Int, height: Int, protocolVersion: Int = ExtraPadProtocol.version) -> String {
         let html = #"""
 <!DOCTYPE html>
 <html>
@@ -155,6 +155,27 @@ enum WebClient {
   var windowStart = new Date().getTime();
   var ws = null, retries = 0;
   var hudVisible = false;
+  var MY_PROTOCOL = __PROTO__;
+
+  // iOS caches the page behind a home-screen shortcut, so this client can be
+  // older than the host it just connected to. Whenever the socket drops, check
+  // whether the host still speaks our version and reload if it does not -
+  // otherwise the user stares at a frozen screen with nothing to click.
+  function reloadIfStale() {
+    try {
+      var req = new XMLHttpRequest();
+      req.open("GET", "/version?t=" + new Date().getTime(), true);
+      req.onreadystatechange = function () {
+        if (req.readyState !== 4 || req.status !== 200) { return; }
+        var hostProtocol = Number(req.responseText.replace(/.*"protocol":([0-9]+).*/, "$1"));
+        if (hostProtocol && hostProtocol !== MY_PROTOCOL) {
+          info.innerHTML = "updating&hellip;";
+          location.replace(location.pathname + "?r=" + new Date().getTime());
+        }
+      };
+      req.send(null);
+    } catch (e) { /* offline; the reconnect loop will keep trying */ }
+  }
 
   // One decode per frame, then a synchronous blit per region. Regions must land
   // in the order they were produced, so exactly one decode is ever in flight.
@@ -214,7 +235,8 @@ enum WebClient {
     // The cookie set when this page loaded is normally enough, but not every
     // old browser attaches cookies to a WebSocket upgrade - so pass the key
     // through from the page URL as well when it is there.
-    ws = new WebSocket(proto + location.host + "/ws" + location.search);
+    var sep = location.search ? location.search + "&" : "?";
+    ws = new WebSocket(proto + location.host + "/ws" + sep + "v=" + MY_PROTOCOL);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = function () {
@@ -256,6 +278,7 @@ enum WebClient {
     ws.onclose = function () {
       retries = retries + 1;
       info.innerHTML = "disconnected, retrying (" + retries + ")";
+      if (retries === 2) { reloadIfStale(); }
       setTimeout(connect, Math.min(500 * retries, 5000));
     };
 
@@ -329,6 +352,7 @@ enum WebClient {
         return html
             .replacingOccurrences(of: "__W__", with: String(width))
             .replacingOccurrences(of: "__H__", with: String(height))
+            .replacingOccurrences(of: "__PROTO__", with: String(protocolVersion))
     }
 
     /// Shown when the key is missing or wrong. Deliberately says nothing about
