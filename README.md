@@ -55,6 +55,7 @@ build/ExtraPad.app/Contents/MacOS/ExtraPad --help
 | `--fps N` | `24` | Eski iPad'ler 1024x768'te ~20-30 kare/sn cozebilir |
 | `--quality Q` | `0.6` | 0.45 altinda yazilar bulanmaya baslar |
 | `--scale 1\|2` | `1` | 2 = HiDPI; Retina olmayan iPad'de gereksiz yuk |
+| `--position YON` | `right` | `left`/`right`/`above`/`below`; menuden de degistirilir, hatirlanir |
 | `--port N` | `8777` | |
 | `--mirror` | kapali | Sanal ekran yerine ana ekrani yansitir |
 
@@ -68,6 +69,21 @@ Log gormek icin uygulamayi paket icinden dogrudan calistirin:
 - `/snapshot` - tek kare JPEG (test icin: `curl -o t.jpg http://localhost:8777/snapshot`)
 - `/info` - JSON durum (kare sayisi, bagli cihaz sayisi)
 
+## Bant genisligi
+
+Bu makinede olculdu (1024x768, hareketli icerik):
+
+| Ayar | Kare | Bant genisligi |
+|---|---|---|
+| `--fps 24 --quality 0.6` (varsayilan) | 82 KB | **15.0 Mbit/s** |
+| `--fps 12 --quality 0.45` | 57 KB | **5.6 Mbit/s** |
+
+Hareketsiz ekranda trafik ~0'a iner: ScreenCaptureKit degismeyen kareyi hic
+gondermez.
+
+**2.4 GHz Wi-Fi kullaniyorsaniz** varsayilan ayar sinirda kalir; `--fps 12
+--quality 0.45` ile baslayin. 5 GHz'de varsayilan rahat calisir.
+
 ## Bilinen sinirlar
 
 - **Dokunma girisi yok.** Sadece goruntu. iPad'den Mac'i kontrol etmek ayri bir
@@ -75,6 +91,11 @@ Log gormek icin uygulamayi paket icinden dogrudan calistirin:
 - **Kablolu baglanti yok.** Safari USB uzerinden Mac'e ulasamaz. Tek istisna:
   iPad hucresel modelse USB tethering ile daha kararli bir IP baglantisi kurulabilir.
   Gercek kablolu destek native bir iPad uygulamasi ister, o da iOS 15+ demek.
+- **Bluetooth bir alternatif degil.** Uc ayri sebeple: (1) iOS Safari'de Bluetooth
+  API'si hic yok, yani istemcimizin erisebilecegi bir yol mevcut degil; (2) o nesil
+  iPad'de BLE pratikte ~0.1-0.3 Mbit/s tasir, ihtiyacimiz olan 15 Mbit/s'in 50-150
+  kati altinda; (3) Bluetooth da 2.4 GHz bandinda calistigi icin ayni anda
+  kullanilan Wi-Fi baglantisini bozar.
 - **Gecikme.** MJPEG sikistirmasi kare-arasi fark kullanmadigi icin H.264'ten cok
   daha fazla bant genisligi yer. Metin/kod icin fazlasiyla iyi, video izlemek icin degil.
 - **Sanal ekran private API kullanir** (`CGVirtualDisplay`). macOS 27'de dogrulandi;

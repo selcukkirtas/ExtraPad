@@ -56,7 +56,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                 captureID = display.displayID
                 // macOS attaches new displays as mirrors; without this the iPad
                 // would show a squashed copy of the built-in screen.
-                DisplayArrangement.makeExtended(display.displayID)
+                DisplayArrangement.arrange(display.displayID, position: config.position)
                 if DisplayArrangement.isMirroring(display.displayID) {
                     statusLine = "sanal ekran yansitma modunda - Ayarlar > Ekranlar'dan 'Genislet' secin"
                     log("[ExtraPad] UYARI: \(statusLine)")
@@ -225,9 +225,35 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
 
+        if virtualDisplay != nil {
+            menu.addItem(.separator())
+            let positionItem = NSMenuItem(title: "Konum", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for option in DisplayPosition.allCases {
+                let entry = NSMenuItem(title: option.label,
+                                       action: #selector(choosePosition(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.representedObject = option.rawValue
+                entry.state = (option == config.position) ? .on : .off
+                submenu.addItem(entry)
+            }
+            positionItem.submenu = submenu
+            menu.addItem(positionItem)
+        }
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Cikis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
+    }
+
+    @objc private func choosePosition(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let position = DisplayPosition(rawValue: raw),
+              let displayID = virtualDisplay?.displayID else { return }
+        config.position = position
+        Config.savedPosition = position
+        DisplayArrangement.arrange(displayID, position: position)
+        rebuildMenu()
     }
 
     @objc private func copyURL(_ sender: NSMenuItem) {

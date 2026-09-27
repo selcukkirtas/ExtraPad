@@ -15,6 +15,20 @@ struct Config {
     var port: UInt16 = 8777
     /// Mirror the main display instead of creating a second one.
     var mirror = false
+    /// Which side of the existing arrangement the iPad sits on. Remembered
+    /// between launches, because the virtual display is new every time and
+    /// macOS has nothing to remember it by.
+    var position = Config.savedPosition
+
+    static let positionDefaultsKey = "ExtraPadPosition"
+
+    static var savedPosition: DisplayPosition {
+        get {
+            let raw = UserDefaults.standard.string(forKey: positionDefaultsKey) ?? ""
+            return DisplayPosition(rawValue: raw) ?? .right
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: positionDefaultsKey) }
+    }
 
     static func fromCommandLine(_ args: [String] = Array(CommandLine.arguments.dropFirst())) -> Config {
         var c = Config()
@@ -39,6 +53,11 @@ struct Config {
             case "--scale":    if let v = next(), let n = Int(v) { c.scale = max(1, min(2, n)) }
             case "--refresh":  if let v = next(), let r = Double(v) { c.refreshRate = r }
             case "--mirror":   c.mirror = true
+            case "--position":
+                if let v = next(), let p = DisplayPosition(rawValue: v.lowercased()) {
+                    c.position = p
+                    Config.savedPosition = p
+                }
             case "--help", "-h":
                 print(Config.usage)
                 exit(0)
