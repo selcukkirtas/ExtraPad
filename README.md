@@ -89,23 +89,40 @@ gondermez.
 
 ### Gercek bir baglantida olculen tavan (iPad 2, A1395)
 
-`/info` ile iPad'e *gercekten* giden kareler sayilarak:
+`/info` ile iPad'e *gercekten* giden kareler sayilarak olculdu.
 
-| Ayar | iPad'in aldigi | Kare | Aktarim |
+**En onemli bulgu ayar degil, ag topolojisi.** Mac ve iPad ayni telsiz radyoyu
+paylastigi surece her bayt havayi iki kez kullanir (Mac -> router, router -> iPad),
+ve yavas olan cihaz butun ortamin hizini belirler. iPad 2 gibi tek akisli eski bir
+istemci varken bu tek basina hizi yariya indiriyor:
+
+| Topoloji | Tavan | Kalite 0.25-0.3'te iPad |
+|---|---|---|
+| Mac 5 GHz + iPad ayni 5 GHz radyoda | 8-9 Mbit/s | 12-13 fps |
+| **Mac 5 GHz + iPad 2.4 GHz (ayri radyo)** | **15 Mbit/s** | **27 fps** |
+
+Yani once ikisini **ayri radyolara** alin; ayar kurcalamaktan cok daha fazla
+kazandiriyor. Eski iPad'lerde 802.11n cogu zaman sadece 2.4 GHz'de calisir, 5 GHz'de
+802.11a'ya duserler - bu cihazlar icin 2.4 GHz *daha hizli* bant olabilir.
+
+Ayri radyo kurulumunda, fps 30 sabitken:
+
+| Kalite | iPad'in aldigi | Kare | Aktarim |
 |---|---|---|---|
-| kalite 0.6, 24 fps | 4.8 fps | 158 KB | 6.8 Mbit/s |
-| kalite 0.3, 24 fps | 11.8 fps | 87 KB | 8.2 Mbit/s |
-| kalite 0.15, 24 fps | 15.6 fps | 63 KB | 7.9 Mbit/s |
-| kalite 0.5, 12 fps | 7.2 fps | 129 KB | 7.6 Mbit/s |
-| **kalite 0.3, 12 fps** | **12.0 fps** | **81 KB** | **7.9 Mbit/s** |
+| 0.25 | 27.4 fps | 67 KB | 15.1 Mbit/s |
+| **0.35** | **16.2 fps** | 85 KB | 11.3 Mbit/s |
+| 0.45 | 12.4 fps | 110 KB | 11.2 Mbit/s |
+| 0.55 | 5.8 fps | 138 KB | 6.5 Mbit/s |
 
-Hangi ayar denenirse denensin aktarim **7.6-8.2 Mbit/s**'te tavan yapiyor. Yani
-darbogaz iPad'in islemcisi degil, baglantinin kendisi: kareyi kucultmek dogrudan
-fps'e ceviriliyor. Islemci darbogazi olsaydi kaliteyi dusurmek fps'i bu kadar
-degistirmezdi, cunku JPEG cozme maliyeti agirlikli olarak cozunurluge baglidir.
+Aktarimin yuksek kalitede *dusmesi* dikkat cekici: bu saf bant genisligi siniri
+degil. Buyuk kareler 2.4 GHz'de daha cok yeniden iletime ugrar ve bir kare
+uzadikca o sirada uretilen kareler atlanir. Kareyi kucuk tutmanin getirisi
+dogrusaldan fazla.
 
-Bu tavanin altinda en verimli nokta `--quality 0.3 --fps 12`: uretilen her kare
-iPad'e ulasiyor, hic kare atilmiyor.
+`--fps`'i tasiyabileceginizden yuksek tutmak ise zararsiz, hatta faydali: istemci
+alabildigini alir, gerisi atlanir. `framesSkipped` sayisinin yuksek olmasi hata
+degil, geri baskinin calistiginin isaretidir - kareler kuyruklanmadigi icin
+goruntu gecikmeli degil yalnizca seyrek olur.
 
 ## Bilinen sinirlar
 
