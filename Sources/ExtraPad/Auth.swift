@@ -20,6 +20,7 @@ import Foundation
 enum Auth {
 
     private static let defaultsKey = "ExtraPadAccessKey"
+    private static let codeKey = "ExtraPadPairingCode"
     static let cookieName = "extrapad"
     static let queryName = "k"
 
@@ -34,10 +35,62 @@ enum Auth {
         return fresh
     }
 
+    // MARK: - Pairing code
+    //
+    // Typing a long key into an old iPad's URL bar is miserable, so the key
+    // itself never has to be typed: the address is short and the secret is six
+    // digits entered into a field, which iOS shows a number pad for.
+
+    private static let lock = NSLock()
+    private static var failures = 0
+
+    static var pairingCode: String {
+        if let stored = UserDefaults.standard.string(forKey: codeKey), stored.count == 6 {
+            return stored
+        }
+        let fresh = generateCode()
+        UserDefaults.standard.set(fresh, forKey: codeKey)
+        return fresh
+    }
+
+    @discardableResult
+    static func rotateCode() -> String {
+        let fresh = generateCode()
+        UserDefaults.standard.set(fresh, forKey: codeKey)
+        lock.lock(); failures = 0; lock.unlock()
+        return fresh
+    }
+
+    private static func generateCode() -> String {
+        var bytes = [UInt8](repeating: 0, count: 6)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return String(bytes.map { Character(String(Int($0) % 10)) })
+    }
+
+    /// Six digits is a small space, so a wrong guess costs time and enough wrong
+    /// guesses retire the code entirely. Brute force then needs a new code,
+    /// which only the Mac's owner can read.
+    static func checkPairingCode(_ candidate: String?) -> Bool {
+        guard let candidate, candidate.count == 6 else { return false }
+        if matchesConstantTime(pairingCode, candidate) {
+            lock.lock(); failures = 0; lock.unlock()
+            return true
+        }
+        lock.lock()
+        failures += 1
+        let count = failures
+        lock.unlock()
+        // Slow down a script; barely noticeable to a person who mistyped.
+        Thread.sleep(forTimeInterval: min(Double(count) * 0.25, 2.0))
+        if count >= 20 { rotateCode() }
+        return false
+    }
+
     @discardableResult
     static func rotate() -> String {
         let fresh = generate()
         UserDefaults.standard.set(fresh, forKey: defaultsKey)
+        rotateCode()
         return fresh
     }
 
@@ -54,7 +107,11 @@ enum Auth {
     /// how long the check took.
     static func matches(_ candidate: String?) -> Bool {
         guard let candidate else { return false }
-        let expected = Array(key.utf8)
+        return matchesConstantTime(key, candidate)
+    }
+
+    private static func matchesConstantTime(_ expectedString: String, _ candidate: String) -> Bool {
+        let expected = Array(expectedString.utf8)
         let given = Array(candidate.utf8)
         guard expected.count == given.count else { return false }
         var difference: UInt8 = 0

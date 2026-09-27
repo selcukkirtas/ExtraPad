@@ -216,10 +216,18 @@ Delta modunun tasarimini eski iPad belirledi:
 Port'a ulasabilen herkes ekrani izleyebilir ve - dokunma girisi geldiginden beri
 - fareyi surebilir. Bu yuzden her yol bir anahtarin arkasinda.
 
-Menu cubugundaki adres anahtari icerir:
-`http://192.168.0.x:8777/?k=...`. Sayfa ilk acildiginda sunucu anahtari bir
-cereze cevirir; sonraki istekler - sayfa, akis, WebSocket - o cerezle gecer.
-Anahtar adreste kaldigi icin iPad'in ana ekran kisayolu da calismaya devam eder.
+Adres kisa: `http://192.168.0.x:8777`. Sirri adrese yazmiyorsunuz - sayfa alti
+haneli bir kod soruyor ve iOS o alan icin sayi klavyesi aciyor. Uzun bir anahtari
+eski bir iPad'in URL cubuguna yazmak eziyet oldugu icin boyle.
+
+Kod dogrulaninca sunucu bir cerez verir; sonraki istekler - sayfa, akis,
+WebSocket - o cerezle gecer, yani kodu bir kez girersiniz. Ana ekran kisayolu da
+kisa adresi tasidigi icin sonrasinda dogrudan acilir.
+
+Kod alti hane, yani kucuk bir uzay: her yanlis deneme gecikmeyle cezalandirilir
+ve 20 yanlistan sonra kod kendiliginden degisir. Kaba kuvvet o noktada yeni bir
+koda ihtiyac duyar, onu da yalnizca Mac'in basindaki kisi gorebilir. Uzun anahtar
+hala `?k=...` ile de kullanilabilir.
 
 Bu sekli iOS 9 dayatti: Safari'nin o surumunde fetch yok, modern kripto yok ve
 JavaScript bir WebSocket el sikismasina baslik ekleyemiyor. Cerez ise var ve

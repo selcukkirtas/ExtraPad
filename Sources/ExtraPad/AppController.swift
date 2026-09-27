@@ -140,8 +140,10 @@ final class AppController: NSObject, NSApplicationDelegate {
          ExtraPad hazir - \(statusLine)
          \(config.width)x\(config.height) @ \(config.fps) fps, kalite \(config.quality)
 
-         iPad'de Safari'yi ac ve su adrese git\(config.auth ? " (anahtar dahil)" : ""):
+         iPad'de Safari'yi ac ve su adrese git:
         \(urls.map { "   \($0)" }.joined(separator: "\n"))
+
+         Sonra sorulan kodu gir: \(config.auth ? Auth.pairingCode : "(anahtar kapali)")
 
          Ipucu: Paylas > Ana Ekrana Ekle ile tam ekran calisir.
         ────────────────────────────────────────────────
@@ -152,10 +154,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func buildURLs() -> [String] {
         // The key rides in the URL so the iPad's home-screen shortcut keeps
         // working; the server turns it into a cookie on first load.
-        let suffix = config.auth ? "?\(Auth.queryName)=\(Auth.key)" : ""
-        var result = NetworkInfo.localIPv4Addresses().map { "http://\($0):\(config.port)/\(suffix)" }
+        // Short on purpose - this gets typed on an old iPad's keyboard. The
+        // secret is entered separately as six digits.
+        var result = NetworkInfo.localIPv4Addresses().map { "http://\($0):\(config.port)" }
         if let host = NetworkInfo.localHostName {
-            result.append("http://\(host):\(config.port)/\(suffix)")
+            result.append("http://\(host):\(config.port)")
         }
         return result
     }
@@ -307,7 +310,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 menu.addItem(forget)
             }
 
-            let rotate = NSMenuItem(title: "Yeni erisim anahtari uret",
+            let code = NSMenuItem(title: "Baglanti kodu:  " + Auth.pairingCode,
+                                  action: #selector(copyCode(_:)), keyEquivalent: "")
+            code.target = self
+            menu.addItem(code)
+
+            let rotate = NSMenuItem(title: "Yeni kod ve anahtar uret",
                                     action: #selector(rotateKey), keyEquivalent: "")
             rotate.target = self
             menu.addItem(rotate)
@@ -374,12 +382,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func copyCode(_ sender: NSMenuItem) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Auth.pairingCode, forType: .string)
+    }
+
     @objc private func rotateKey() {
         Auth.rotate()
         urls = buildURLs()
         rebuildMenu()
         let alert = NSAlert()
-        alert.messageText = "Yeni erisim anahtari uretildi"
+        alert.messageText = "Yeni kod ve anahtar uretildi"
         alert.informativeText = "Bagli cihazlar dustu. Menudeki yeni adresi iPad'de acin ve "
             + "ana ekran kisayolunu yenileyin - eski kisayol artik calismaz."
         alert.runModal()

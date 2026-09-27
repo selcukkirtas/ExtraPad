@@ -438,4 +438,55 @@ enum WebClient {
 </html>
 """#
     }
+
+    /// Where an unpaired device lands. A short address to type, then six digits
+    /// into a field - iOS shows a number pad for `type="tel"`, which beats
+    /// typing a long key into the URL bar on an old iPad.
+    static func pairingPage(wrong: Bool) -> String {
+        let message = wrong
+            ? "<p class=\"bad\">Kod dogru degil. Mac'teki menuden tekrar bakin.</p>"
+            : "<p>Mac'te menu cubugundaki ExtraPad simgesine tiklayin, orada yazan alti haneli kodu girin.</p>"
+        return #"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>ExtraPad</title>
+<style>
+  * { -webkit-box-sizing: border-box; box-sizing: border-box; }
+  body { margin: 0; background: #16181c; color: #e8eaed;
+         font: 17px -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; text-align: center; }
+  .card { width: 22em; max-width: 90%; padding: 2em; }
+  h1 { font-size: 1.3em; margin: 0 0 .5em; }
+  p { color: #9aa0a6; line-height: 1.5; margin: 0 0 1.5em; }
+  p.bad { color: #ff9a8a; }
+  input { width: 100%; padding: .7em; font-size: 2em; text-align: center;
+          letter-spacing: .35em; border-radius: 12px; border: 2px solid #3a3f47;
+          background: #1e2126; color: #fff; -webkit-appearance: none; }
+  input:focus { outline: none; border-color: #8ec7fb; }
+  button { margin-top: 1em; width: 100%; padding: .8em; font-size: 1.1em;
+           border: none; border-radius: 12px; background: #3b82f6; color: #fff;
+           -webkit-appearance: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>ExtraPad</h1>
+    __MESSAGE__
+    <form method="GET" action="/pair">
+      <input name="code" type="tel" maxlength="6" pattern="[0-9]*"
+             placeholder="000000" autofocus>
+      <button type="submit">Baglan</button>
+    </form>
+  </div>
+</body>
+</html>
+"""#.replacingOccurrences(of: "__MESSAGE__", with: message)
+    }
 }

@@ -127,7 +127,7 @@ final class MJPEGServer {
             return
         }
         let target = String(parts[1])
-        let path = String(target.split(separator: "?").first ?? "/")
+        var path = String(target.split(separator: "?").first ?? "/")
         let query: [String: String] = {
             guard let q = target.split(separator: "?").dropFirst().first else { return [:] }
             var out: [String: String] = [:]
@@ -151,8 +151,27 @@ final class MJPEGServer {
             }
         }
 
+        // Unpaired devices get the code entry page instead of a bare refusal:
+        // the whole point is that the address stays short enough to type.
+        if !authorised, path == "/pair" {
+            if Auth.checkPairingCode(query["code"]) {
+                authorised = true
+                issueCookie = true
+                path = "/"
+            } else {
+                sendPage(conn, status: "200 OK", html: WebClient.pairingPage(wrong: true))
+                return
+            }
+        }
+
         guard authorised else {
-            sendPage(conn, status: "401 Unauthorized", html: WebClient.unauthorisedPage())
+            let wantsPage = (path == "/" || path == "/index.html"
+                             || path == "/delta" || path == "/mjpeg")
+            if wantsPage {
+                sendPage(conn, status: "200 OK", html: WebClient.pairingPage(wrong: false))
+            } else {
+                sendPage(conn, status: "401 Unauthorized", html: WebClient.unauthorisedPage())
+            }
             return
         }
 
