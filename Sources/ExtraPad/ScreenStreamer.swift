@@ -1,0 +1,127 @@
+import Foundation
+import CoreImage
+import CoreMedia
+import ScreenCaptureKit
+
+/// Captures one display with ScreenCaptureKit and turns each frame into a JPEG.
+/// JPEG rather than H.264 because Safari on iOS 9-11 has neither Media Source
+/// Extensions nor WebRTC - a multipart JPEG stream is the only thing it can decode.
+final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
+
+    enum StreamError: LocalizedError {
+        case displayNotFound(CGDirectDisplayID)
+        case noDisplays
+
+        var errorDescription: String? {
+            switch self {
+            case .displayNotFound(let id):
+                return "Yakalanacak ekran bulunamadi (displayID \(id))."
+            case .noDisplays:
+                return "Paylasilabilir ekran bulunamadi. Ekran Kaydi izni verildi mi?"
+            }
+        }
+    }
+
+    let broadcaster = FrameBroadcaster()
+
+    private let config: Config
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    private let sampleQueue = DispatchQueue(label: "dev.extrapad.capture", qos: .userInitiated)
+    private var stream: SCStream?
+
+    /// Frames dropped because encoding of the previous one was still running.
+    private let statsLock = NSLock()
+    private var _droppedFrames: UInt64 = 0
+    private var encoding = false
+
+    var droppedFrames: UInt64 {
+        statsLock.lock(); defer { statsLock.unlock() }
+        return _droppedFrames
+    }
+
+    init(config: Config) {
+        self.config = config
+        super.init()
+    }
+
+    /// `displayID` of 0 means "whatever macOS considers the main display".
+    func start(displayID: CGDirectDisplayID) async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false, onScreenWindowsOnly: false)
+        guard !content.displays.isEmpty else { throw StreamError.noDisplays }
+
+        let target: SCDisplay
+        if displayID == 0 {
+            guard let main = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+                    ?? content.displays.first else { throw StreamError.noDisplays }
+            target = main
+        } else {
+            guard let found = content.displays.first(where: { $0.displayID == displayID }) else {
+                throw StreamError.displayNotFound(displayID)
+            }
+            target = found
+        }
+
+        let filter = SCContentFilter(display: target, excludingWindows: [])
+        let cfg = SCStreamConfiguration()
+        cfg.width = config.width * config.scale
+        cfg.height = config.height * config.scale
+        cfg.pixelFormat = kCVPixelFormatType_32BGRA
+        cfg.colorSpaceName = CGColorSpace.sRGB
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(config.fps))
+        cfg.queueDepth = 3
+        cfg.showsCursor = true
+        // Feeding identical frames wastes the iPad's decoder; SCK already
+        // withholds a frame when nothing changed.
+
+        let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+        try await stream.startCapture()
+        self.stream = stream
+    }
+
+    func stop() async {
+        guard let stream else { return }
+        self.stream = nil
+        try? await stream.stopCapture()
+    }
+
+    // MARK: - SCStreamOutput
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                of type: SCStreamOutputType) {
+        guard type == .screen, sampleBuffer.isValid,
+              let pixelBuffer = sampleBuffer.imageBuffer else { return }
+
+        // Skip rather than queue: a backlog would only add latency.
+        statsLock.lock()
+        if encoding {
+            _droppedFrames += 1
+            statsLock.unlock()
+            return
+        }
+        encoding = true
+        statsLock.unlock()
+        defer {
+            statsLock.lock(); encoding = false; statsLock.unlock()
+        }
+
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let jpeg = ciContext.jpegRepresentation(
+            of: image,
+            colorSpace: colorSpace,
+            options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption:
+                        config.quality]
+        ) else { return }
+
+        broadcaster.publish(jpeg)
+    }
+
+    // MARK: - SCStreamDelegate
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        FileHandle.standardError.write(
+            "[ExtraPad] Yakalama durdu: \(error.localizedDescription)\n".data(using: .utf8)!)
+    }
+}
