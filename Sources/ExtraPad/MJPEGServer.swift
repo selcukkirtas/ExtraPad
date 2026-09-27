@@ -301,8 +301,9 @@ final class MJPEGServer {
             send(conn, status: "204 No Content", body: Data(), contentType: "image/x-icon")
 
         default:
-            send(conn, status: "404 Not Found", body: Data("Yok\n".utf8),
-                 contentType: "text/plain; charset=utf-8")
+            // A bare "not found" on a phone browser reads as "the whole thing is
+            // broken", so point the way back instead.
+            sendPage(conn, status: "404 Not Found", html: WebClient.notFoundPage())
         }
     }
 

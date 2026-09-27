@@ -352,9 +352,10 @@ enum WebClient {
 </head>
 <body>
   <div class="card">
-    <h1>Erisim anahtari gerekli</h1>
-    <p>Mac'te menu cubugundaki ExtraPad simgesine tiklayin ve oradaki tam adresi
-       kullanin. Adres <code>?k=...</code> ile biter.</p>
+    <h1>Once baglanmaniz gerekiyor</h1>
+    <p>Bu adresin ana sayfasini acin ve Mac'teki menu cubugunda yazan alti haneli
+       kodu girin.</p>
+    <p style="margin-top:1em"><a href="/" style="color:#8ec7fb">Ana sayfaya git</a></p>
   </div>
 </body>
 </html>
@@ -488,5 +489,35 @@ enum WebClient {
 </body>
 </html>
 """#.replacingOccurrences(of: "__MESSAGE__", with: message)
+    }
+
+    static func notFoundPage() -> String {
+        return #"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ExtraPad</title>
+<style>
+  body { margin: 0; background: #16181c; color: #e8eaed;
+         font: 16px -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         height: 100vh; text-align: center; }
+  .card { max-width: 28em; padding: 2em; }
+  h1 { font-size: 1.25em; margin: 0 0 .6em; }
+  p { color: #9aa0a6; line-height: 1.5; margin: 0 0 1em; }
+  a { color: #8ec7fb; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bu adres yok</h1>
+    <p>ExtraPad calisiyor, ama istediginiz sayfa burada degil.</p>
+    <p><a href="/">Ana sayfaya git</a></p>
+  </div>
+</body>
+</html>
+"""#
     }
 }
