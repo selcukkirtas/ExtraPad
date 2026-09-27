@@ -93,6 +93,41 @@ Worth doing, in rough order of value:
 | **Pencil and multi-touch** | Raw touch data is unavailable to a web page at useful fidelity | Pressure, tilt, gestures |
 | **TLS with a pinned certificate** | Safari on iOS 9 makes self-signed certs impractical; a native client can pin at pairing time | Closes the "traffic is readable" hole honestly |
 
+## 4b. Pairing without a code, via iCloud
+
+Worth recording why the obvious idea does not work and what replaces it.
+
+**Asking for the iCloud password is not an option.** Apple exposes no API for a
+third-party app to verify an Apple ID password - there is nothing to check it
+against. Beyond that, a field labelled "iCloud password" in a third-party app is
+the shape of a phishing attack: App Review rejects it, and it teaches users to
+type their Apple ID password into arbitrary software. Guarding a LAN screen
+share with the credential that protects the user's entire account is the wrong
+way round, and today that password would cross the network in the clear.
+
+**What does work, once a native client exists:** prove that both devices are
+signed into the same Apple ID by using the user's own private CloudKit database.
+
+1. The iPad writes a short-lived pairing record into its **private** CloudKit
+   database in our container.
+2. The Mac tries to read that record from the same private database.
+3. If it can, the two devices are on the same Apple ID - nobody else can write
+   to or read that database.
+
+This is a real proof rather than a claim. An iPad simply *asserting* an account
+identifier would be forgeable; the write-then-read handshake is not.
+
+Cost, stated plainly: CloudKit needs a paid membership, pairing needs the
+internet at that moment, and it fails when the Mac and the iPad are on different
+Apple IDs.
+
+So the six-digit code stays as the fallback and remains the only path for
+offline use, mixed accounts, and the web client on old iPads. iCloud pairing is
+a convenience layer on top, not a replacement.
+
+Slot this into Phase C, after the native client exists and a membership is in
+place.
+
 ## 5. Security, revisited for a shipping product
 
 The current model - shared secret over plain HTTP - is documented honestly as
