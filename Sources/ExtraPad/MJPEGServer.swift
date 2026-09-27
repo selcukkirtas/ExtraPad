@@ -131,7 +131,15 @@ final class MJPEGServer {
         }()
 
         switch path {
-        case "/", "/index.html":
+        case "/", "/index.html", "/delta":
+            // Delta is the default: same quality at roughly a tenth of the
+            // bytes and several times the frame rate.
+            let html = WebClient.deltaPage(width: config.width, height: config.height)
+            send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
+
+        case "/mjpeg":
+            // Kept as a fallback: it needs no WebSocket, no canvas and no
+            // JavaScript in the pixel path, so it works where delta will not.
             let html = WebClient.page(width: config.width, height: config.height, fps: config.fps)
             send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
 
@@ -140,10 +148,6 @@ final class MJPEGServer {
 
         case "/ws":
             startWebSocket(conn, requestHead: requestHead)
-
-        case "/delta":
-            let html = WebClient.deltaPage(width: config.width, height: config.height)
-            send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
 
         case "/snapshot":
             if let frame = broadcaster.latestFrame {

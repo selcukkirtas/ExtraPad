@@ -64,8 +64,9 @@ Log gormek icin uygulamayi paket icinden dogrudan calistirin:
 
 ### Ucnokta uclari
 
-- `/` - iPad istemcisi
-- `/stream` - MJPEG akisi
+- `/` - iPad istemcisi (delta modu)
+- `/mjpeg` + `/stream` - yedek MJPEG istemcisi ve akisi
+- `/ws` - delta akisi (WebSocket)
 - `/snapshot` - tek kare JPEG (test icin: `curl -o t.jpg http://localhost:8777/snapshot`)
 - `/info` - JSON durum: uretilen kare, istemci basina **gonderilen/atlanan kare**,
   bayt ve gerceklesen fps. Darbogaz teshisi icin asil arac budur.
@@ -128,8 +129,8 @@ goruntu gecikmeli degil yalnizca seyrek olur.
 
 | Adres | Yol | Kullanim |
 |---|---|---|
-| `/` | Tam kare MJPEG, `<img>` icinde | Her seyde calisir, hicbir JS pikselle ugrasmaz |
-| `/delta` | Sadece degisen dikdortgenler, WebSocket + canvas | Cok daha az bant genisligi |
+| `/` (ve `/delta`) | Sadece degisen dikdortgenler, WebSocket + canvas | **Varsayilan.** Ayni kalitede cok daha az bant genisligi ve cok daha yuksek kare hizi |
+| `/mjpeg` | Tam kare MJPEG, `<img>` icinde | Yedek yol: WebSocket, canvas ya da JS gerektirmez, delta'nin calismadigi yerde calisir |
 
 Delta modunda ekran 32px'lik karolarla onceki kareyle karsilastirilir, degisen
 karolar birkac buyuk dikdortgene birlestirilir ve yalnizca onlar JPEG'lenip
