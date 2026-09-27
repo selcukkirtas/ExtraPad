@@ -46,12 +46,58 @@ final class DeltaEncoder {
     /// sending many rectangles plus their JPEG headers.
     private static let keyframeThreshold = 0.55
 
+    /// Quality floor used when most of the screen is moving. Detail is wasted on
+    /// content that is already blurred by motion, and a 270KB full frame takes
+    /// long enough to send that the client falls behind, drops its backlog and
+    /// reconnects - which asks for another full frame. That loop is what a
+    /// fixed high quality produced here.
+    private static let motionQuality = 0.45
+
+    /// How many stale tiles to repaint per idle frame. The screen converges back
+    /// to full quality in well under a second, and only while nothing is
+    /// happening, so it never competes with real updates.
+    private static let refreshTilesPerFrame = 48
+
     /// More rectangles than this and we merge everything into one bounding box;
     /// past this point the per-rectangle overhead outweighs the pixels saved.
     private static let maxPatches = 12
 
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    /// Why frames are coming out the way they are. Without this you cannot
+    /// tell a delta stream that is working from one that is quietly sending a
+    /// full frame every time.
+    struct Stats {
+        var keyframes = 0
+        var deltaFrames = 0
+        var keyframeBytes = 0
+        var deltaBytes = 0
+        var regions = 0
+        var dirtyFractionSum = 0.0
+        var forcedKeyframes = 0      // asked for by a client
+        var thresholdKeyframes = 0   // too much of the screen changed
+    }
+
+    private let statsLock = NSLock()
+    private var _stats = Stats()
+
+    var stats: Stats {
+        statsLock.lock(); defer { statsLock.unlock() }
+        return _stats
+    }
+
+    func resetStats() {
+        statsLock.lock(); _stats = Stats(); statsLock.unlock()
+    }
+
+    private func record(_ body: (inout Stats) -> Void) {
+        statsLock.lock(); body(&_stats); statsLock.unlock()
+    }
+
+    /// Tiles last transmitted below the requested quality. While the screen is
+    /// idle these get repainted sharp, so motion costs detail only briefly.
+    private var stale: [Bool] = []
 
     private var previous: [UInt8] = []
     private var previousWidth = 0
@@ -61,6 +107,15 @@ final class DeltaEncoder {
     /// Makes the next frame a full-screen keyframe. Used when a client joins,
     /// since it has no earlier pixels to patch on top of.
     func requestKeyframe() { forceKeyframe = true }
+
+    /// Full quality while little is moving, sliding down to `motionQuality`
+    /// once a large part of the screen is changing every frame.
+    private static func adaptiveQuality(base: Double, dirtyFraction: Double) -> Double {
+        let easyLimit = 0.08
+        guard dirtyFraction > easyLimit else { return base }
+        let t = min((dirtyFraction - easyLimit) / (keyframeThreshold - easyLimit), 1.0)
+        return base + (motionQuality - base) * t
+    }
 
     func encode(_ pixelBuffer: CVPixelBuffer, quality: Double) -> Atlas? {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
@@ -78,7 +133,9 @@ final class DeltaEncoder {
         if forceKeyframe || sizeChanged || previous.isEmpty {
             storePrevious(bytes: bytes, stride: stride, width: width, height: height)
             forceKeyframe = false
-            return keyframe(image, width: width, height: height, quality: quality)
+            record { $0.forcedKeyframes += 1 }
+            return keyframe(image, width: width, height: height,
+                            quality: min(quality, Self.motionQuality), markStale: true)
         }
 
         let dirty = dirtyTiles(bytes: bytes, stride: stride, width: width, height: height)
@@ -86,12 +143,21 @@ final class DeltaEncoder {
 
         let tilesAcross = (width + Self.tileSize - 1) / Self.tileSize
         let tilesDown = (height + Self.tileSize - 1) / Self.tileSize
+        ensureStaleMap(count: dirty.count)
         let dirtyCount = dirty.reduce(0) { $0 + ($1 ? 1 : 0) }
-        if dirtyCount == 0 { return nil }
+        if dirtyCount == 0 {
+            return refreshPass(image, tilesAcross: tilesAcrossFor(width),
+                               tilesDown: tilesDownFor(height),
+                               width: width, height: height, quality: quality)
+        }
 
         // Too much changed: one full frame is cheaper than many rectangles.
-        if Double(dirtyCount) / Double(tilesAcross * tilesDown) > Self.keyframeThreshold {
-            return keyframe(image, width: width, height: height, quality: quality)
+        let dirtyFraction = Double(dirtyCount) / Double(tilesAcross * tilesDown)
+        record { $0.dirtyFractionSum += dirtyFraction }
+        if dirtyFraction > Self.keyframeThreshold {
+            record { $0.thresholdKeyframes += 1 }
+            return keyframe(image, width: width, height: height,
+                            quality: min(quality, Self.motionQuality), markStale: true)
         }
 
         var rects = mergeRects(dirty: dirty, tilesAcross: tilesAcross, tilesDown: tilesDown,
@@ -100,13 +166,57 @@ final class DeltaEncoder {
             rects = [bounding]
         }
 
+        let effective = Self.adaptiveQuality(base: quality, dirtyFraction: dirtyFraction)
+        markStale(dirty: dirty, stale: effective < quality - 0.001)
+        return packAtlas(image, rects: rects, frameHeight: height, quality: effective)
+    }
+
+    // MARK: - Progressive refresh
+
+    private func tilesAcrossFor(_ width: Int) -> Int { (width + Self.tileSize - 1) / Self.tileSize }
+    private func tilesDownFor(_ height: Int) -> Int { (height + Self.tileSize - 1) / Self.tileSize }
+
+    private func ensureStaleMap(count: Int) {
+        if stale.count != count { stale = [Bool](repeating: false, count: count) }
+    }
+
+    private func markStale(dirty: [Bool], stale shouldMark: Bool) {
+        ensureStaleMap(count: dirty.count)
+        for index in dirty.indices where dirty[index] {
+            // A tile just sent at full quality is clean again.
+            stale[index] = shouldMark
+        }
+    }
+
+    /// Repaints tiles that were last sent at reduced quality, a batch at a time,
+    /// using the idle bandwidth that would otherwise go unused.
+    private func refreshPass(_ image: CIImage, tilesAcross: Int, tilesDown: Int,
+                             width: Int, height: Int, quality: Double) -> Atlas? {
+        var picked: [Bool] = [Bool](repeating: false, count: stale.count)
+        var budget = Self.refreshTilesPerFrame
+        for index in stale.indices where stale[index] && budget > 0 {
+            picked[index] = true
+            stale[index] = false
+            budget -= 1
+        }
+        guard budget < Self.refreshTilesPerFrame else { return nil }
+
+        let rects = mergeRects(dirty: picked, tilesAcross: tilesAcross, tilesDown: tilesDown,
+                               width: width, height: height)
+        guard !rects.isEmpty else { return nil }
         return packAtlas(image, rects: rects, frameHeight: height, quality: quality)
     }
 
-    private func keyframe(_ image: CIImage, width: Int, height: Int, quality: Double) -> Atlas? {
+    private func keyframe(_ image: CIImage, width: Int, height: Int,
+                          quality: Double, markStale shouldMarkStale: Bool = false) -> Atlas? {
+        if shouldMarkStale {
+            ensureStaleMap(count: tilesAcrossFor(width) * tilesDownFor(height))
+            for index in stale.indices { stale[index] = true }
+        }
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         guard let jpeg = encodeRegion(image, rect: full, frameHeight: height, quality: quality)
         else { return nil }
+        record { $0.keyframes += 1; $0.keyframeBytes += jpeg.count; $0.regions += 1 }
         return Atlas(regions: [Atlas.Region(sourceY: 0, dest: .zero,
                                             size: CGSize(width: width, height: height))],
                      jpeg: jpeg, isKeyframe: true)
@@ -151,6 +261,7 @@ final class DeltaEncoder {
             options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: quality]
         ) else { return nil }
 
+        record { $0.deltaFrames += 1; $0.deltaBytes += jpeg.count; $0.regions += regions.count }
         return Atlas(regions: regions, jpeg: jpeg, isKeyframe: false)
     }
 

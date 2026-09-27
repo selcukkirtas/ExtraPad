@@ -183,13 +183,15 @@ enum WebClient {
     img.src = url;
   }
 
-  // A backlog is latency: what is queued is already stale. Keep it short, and
-  // when decoding cannot keep up throw the backlog away and reconnect, which
-  // makes the server send a fresh full frame - the only safe way back to a
-  // correct canvas.
+  // A backlog is latency: what is queued is already stale. Throw it away and
+  // ask the server for a fresh full frame.
+  //
+  // This used to reconnect instead, which was a loop: reconnecting asked for a
+  // keyframe, the keyframe was big enough to overrun the queue again, and that
+  // reconnected. Asking over the open socket breaks the cycle.
   function overflow() {
     queue = [];
-    if (ws) { ws.close(); }
+    if (ws && ws.readyState === 1) { ws.send("R"); }
   }
 
   function report() {

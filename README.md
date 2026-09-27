@@ -141,6 +141,12 @@ karolar birkac buyuk dikdortgene birlestirilir ve yalnizca onlar JPEG'lenip
 gonderilir. Ekranin yarisindan fazlasi degistiyse tek bir tam kare gondermek daha
 ucuz oldugu icin keyframe'e dusulur.
 
+Uyarlanabilir kalite ve kademeli tazeleme devreye girmeden once, sabit yuksek
+kalitede gercek kullanimda olculen tablo suydu: kareler icinde keyframe orani
+%5, ama **toplam baytin %60'i**. Ortalama keyframe 270 KB, ortalama delta 10 KB.
+Duzeltmelerden sonra ayni testte keyframe 66 KB'ye, delta 2.5 KB'ye, esik
+asimindan kaynaklanan keyframe sayisi 72'den 0'a dustu.
+
 Ayni makinede, ayni kalitede (0.6) olculdu:
 
 | | `/` (MJPEG) | `/delta` |
@@ -165,6 +171,15 @@ Delta modunun tasarimini eski iPad belirledi:
 - **Hicbir guncelleme atlanamaz.** Kacirilan bir guncelleme, bir sonraki
   keyframe'e kadar ekranda bayat bir dikdortgen birakir. Yetisemeyen istemci bu
   yuzden yarim guncelleme almak yerine tamamen atlanir.
+- **Kalite hareketle birlikte otomatik ayarlanir.** Ekranin buyuk bolumu
+  degisirken kalite dusurulur; detay zaten hareketle bulaniyor, ama 270 KB'lik
+  bir tam kare gondermek istemciyi geride birakiyor. Ekran durulunca, bosta
+  kalan bant genisligi kullanilarak dusuk kalitede gonderilmis karolar kare kare
+  tazelenir ve goruntu bir saniyeden kisa surede eski keskinligine doner.
+- **Istemci bozuldugunda baglantiyi kapatmaz, acik soketten tazeleme ister.**
+  Onceki hali yeniden baglaniyordu ve bu bir dongu uretiyordu: yeniden baglanmak
+  keyframe istiyor, keyframe kuyrugu tasiriyor, tasan kuyruk yeniden
+  baglaniyordu.
 - **Geri kalan istemci tek bir keyframe ister, her karede degil.** Keyframe bir
   delta'nin on katidir; her karede istemek, zaten zorlanan istemciyi bogar.
   Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince

@@ -41,6 +41,9 @@ final class MJPEGServer {
     var onSettingsChange: ((Double?, Int?) -> Void)?
     /// Called when a delta client needs a full frame to draw on top of.
     var onKeyframeRequest: (() -> Void)?
+    /// Delta-encoder counters, for /info.
+    var deltaStatsProvider: (() -> DeltaEncoder.Stats)?
+    var resetDeltaStats: (() -> Void)?
 
     init(config: Config, broadcaster: FrameBroadcaster, patchBroadcaster: PatchBroadcaster) {
         self.config = config
@@ -168,13 +171,29 @@ final class MJPEGServer {
                 "fps":\(String(format: "%.1f", rate))}
                 """
             }.joined(separator: ",")
+            var delta = ""
+            if let stats = deltaStatsProvider?() {
+                let frames = max(stats.keyframes + stats.deltaFrames, 1)
+                delta = """
+                ,"delta":{"keyframes":\(stats.keyframes),"deltaFrames":\(stats.deltaFrames),\
+                "avgKeyframeKB":\(String(format: "%.1f", Double(stats.keyframeBytes) / Double(max(stats.keyframes, 1)) / 1024)),\
+                "avgDeltaKB":\(String(format: "%.1f", Double(stats.deltaBytes) / Double(max(stats.deltaFrames, 1)) / 1024)),\
+                "avgRegionsPerFrame":\(String(format: "%.1f", Double(stats.regions) / Double(frames))),\
+                "avgDirtyPct":\(String(format: "%.1f", 100 * stats.dirtyFractionSum / Double(max(stats.deltaFrames + stats.thresholdKeyframes, 1)))),\
+                "keyframesByThreshold":\(stats.thresholdKeyframes),"keyframesRequested":\(stats.forcedKeyframes)}
+                """
+            }
             let json = """
             {"width":\(config.width),"height":\(config.height),"scale":\(config.scale),\
             "fps":\(config.fps),"quality":\(config.quality),\
             "framesPublished":\(broadcaster.framesPublished),\
-            "activeStreams":\(activeStreams),"clients":[\(clients)]}
+            "activeStreams":\(activeStreams),"clients":[\(clients)]\(delta)}
             """
             send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
+
+        case "/resetstats":
+            resetDeltaStats?()
+            send(conn, status: "200 OK", body: Data("{\"ok\":true}".utf8), contentType: "application/json")
 
         case "/set":
             let quality = query["quality"].flatMap(Double.init)
@@ -308,15 +327,26 @@ final class MJPEGServer {
             })
         }
 
-        // Only thing expected back from the browser is a close frame.
-        func readClose() {
+        // The browser sends two things: a close frame, or a resync request when
+        // its canvas has fallen out of step.
+        func readClient() {
             conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
                 if error != nil || isComplete { teardown(); return }
-                if let data, WebSocket.isCloseFrame(data) { teardown(); return }
-                if !finished.value { readClose() }
+                if let data {
+                    switch WebSocket.clientFrame(data) {
+                    case .close:
+                        teardown()
+                        return
+                    case .resync:
+                        if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
+                    case .other:
+                        break
+                    }
+                }
+                if !finished.value { readClient() }
             }
         }
-        readClose()
+        readClient()
 
         conn.stateUpdateHandler = { state in
             switch state {

@@ -59,11 +59,25 @@ enum WebSocket {
         return frame
     }
 
-    /// True when the bytes coming back from the browser are a close frame.
-    /// Anything else from the client is ignored - this stream is one-way.
-    static func isCloseFrame(_ data: Data) -> Bool {
-        guard let first = data.first else { return false }
-        return (first & 0x0F) == 0x8
+    enum ClientFrame {
+        case close
+        /// Any data frame from the browser means "my canvas is wrong, send a
+        /// full frame". That is the client's only way to recover without
+        /// dropping the connection - and reconnecting to recover was itself
+        /// causing a keyframe loop.
+        case resync
+        case other
+    }
+
+    /// Reads the first frame in `data`. Client frames are masked, but we only
+    /// need the opcode, so the mask is skipped rather than applied.
+    static func clientFrame(_ data: Data) -> ClientFrame {
+        guard let first = data.first else { return .other }
+        switch first & 0x0F {
+        case 0x8:        return .close
+        case 0x1, 0x2:   return .resync
+        default:         return .other
+        }
     }
 }
 

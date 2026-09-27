@@ -81,6 +81,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                                  broadcaster: streamer.broadcaster,
                                  patchBroadcaster: streamer.patchBroadcaster)
         server.onKeyframeRequest = { [weak streamer] in streamer?.requestKeyframe() }
+        server.deltaStatsProvider = { [weak streamer] in streamer?.deltaStats ?? DeltaEncoder.Stats() }
+        server.resetDeltaStats = { [weak streamer] in streamer?.resetDeltaStats() }
         server.onSettingsChange = { [weak streamer] quality, fps in
             Task { await streamer?.update(quality: quality, fps: fps) }
         }

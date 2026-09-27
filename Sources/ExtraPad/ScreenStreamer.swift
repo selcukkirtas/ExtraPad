@@ -179,6 +179,9 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     /// has no earlier pixels to patch onto.
     func requestKeyframe() { deltaEncoder.requestKeyframe() }
 
+    var deltaStats: DeltaEncoder.Stats { deltaEncoder.stats }
+    func resetDeltaStats() { deltaEncoder.resetStats() }
+
     // MARK: - SCStreamDelegate
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
