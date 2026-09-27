@@ -21,6 +21,9 @@ struct Config {
     var input = true
     /// Require the access key. Off only for a network you already trust.
     var auth = true
+    /// Which arrangement slot this session's display occupies, so several
+    /// displays tile instead of stacking on top of each other.
+    var positionSlot = 0
     /// Show the diagnostic strip on the iPad. Off by default - it earned its
     /// keep while tuning, but it is clutter on a screen you actually use.
     var hud = Config.saved(Config.hudKey, default: false)

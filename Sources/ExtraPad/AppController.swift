@@ -8,8 +8,7 @@ import ExtraPadProtocol
 final class AppController: NSObject, NSApplicationDelegate {
 
     private var config: Config
-    private var virtualDisplay: EPVirtualDisplay?
-    private var streamer: ScreenStreamer?
+    private var sessions: SessionManager?
     private var server: MJPEGServer?
     private var statusItem: NSStatusItem?
     private var refreshTimer: Timer?
@@ -17,7 +16,10 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var statusLine = "starting..."
     private var needsScreenPermission = false
     private var needsInputPermission = false
-    private var injector: InputInjector?
+    private var injectors: [String: InputInjector] = [:]
+    /// Refreshed on the menu timer so the network queue never has to ask.
+    private let statsBox = Atomic(DeltaEncoder.Stats())
+    private var latestDeltaStats: DeltaEncoder.Stats { statsBox.value }
     private var retryTask: Task<Void, Never>?
 
     init(config: Config) {
@@ -33,6 +35,9 @@ final class AppController: NSObject, NSApplicationDelegate {
                 if self?.needsInputPermission == true, InputInjector.isPermitted {
                     self?.needsInputPermission = false
                 }
+                if let first = self?.sessions?.sessions.values.first {
+                    self?.statsBox.store(first.streamer.deltaStats)
+                }
                 self?.rebuildMenu()
             }
         }
@@ -41,79 +46,67 @@ final class AppController: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         retryTask?.cancel()
         server?.stop()
-        virtualDisplay?.invalidate()
+        MainActor.assumeIsolated {
+            Task { await sessions?.shutDownAll() }
+        }
     }
 
     // MARK: - Pipeline
 
     private func startPipeline() async {
-        var captureID: CGDirectDisplayID = 0
-
         if config.mirror {
             statusLine = "mirroring the main display"
         } else if EPVirtualDisplay.supported {
-            let display = EPVirtualDisplay(
-                name: "ExtraPad",
-                pixelsWide: UInt(config.width * config.scale),
-                pixelsHigh: UInt(config.height * config.scale),
-                refreshRate: config.refreshRate,
-                scale: UInt(config.scale)
-            )
-            if let display, display.displayID != 0 {
-                virtualDisplay = display
-                captureID = display.displayID
-                // macOS attaches new displays as mirrors; without this the iPad
-                // would show a squashed copy of the built-in screen.
-                DisplayArrangement.arrange(display.displayID, position: config.position)
-                if DisplayArrangement.isMirroring(display.displayID) {
-                    statusLine = "virtual display is mirroring - choose Extend in Settings > Displays"
-                    log("[ExtraPad] WARNING: \(statusLine)")
-                } else {
-                    statusLine = "virtual display active"
-                }
-            } else {
-                config.mirror = true
-                statusLine = "could not create a virtual display, fell back to mirroring"
-                log(statusLine)
-            }
+            statusLine = "ready for displays"
         } else {
             config.mirror = true
             statusLine = "no virtual display on this macOS, mirroring instead"
-            log(statusLine)
+            log("[ExtraPad] \(statusLine)")
         }
 
-        let streamer = ScreenStreamer(config: config)
-        streamer.showHUD = config.hud
-        self.streamer = streamer
+        // Displays are created per device rather than up front: their
+        // resolution has to match the iPad that asked for one, and the host has
+        // no way to guess that before a client says so.
+        let sessions = SessionManager(config: config)
+        self.sessions = sessions
+        sessions.onSessionCreated = { [weak self] session in
+            Task { @MainActor in await self?.begin(session) }
+        }
+        sessions.onSessionRemoved = { [weak self] deviceID in
+            self?.server?.registry.remove(deviceID)
+            self?.injectors.removeValue(forKey: deviceID)
+        }
 
-        let server = MJPEGServer(config: config,
-                                 broadcaster: streamer.broadcaster,
-                                 patchBroadcaster: streamer.patchBroadcaster,
-                                 videoBroadcaster: streamer.videoBroadcaster)
-        server.onVideoKeyframeRequest = { [weak streamer] in streamer?.requestVideoKeyframe() }
-        server.videoParameterSets = { [weak streamer] in streamer?.videoParameterSets }
+        let server = MJPEGServer(config: config)
+        // Creation is the only thing that needs the main actor; everything the
+        // network queue reads comes from the registry, under a lock.
+        server.createSession = { [weak sessions, weak server] deviceID, size, completion in
+            Task { @MainActor in
+                guard let session = sessions?.session(for: deviceID, preferredSize: size) else {
+                    completion(nil)
+                    return
+                }
+                let handles = session.handles(deviceID: deviceID)
+                server?.registry.set(handles, for: deviceID)
+                completion(handles)
+            }
+        }
+        server.releaseSession = { [weak sessions] deviceID in
+            Task { @MainActor in sessions?.release(deviceID: deviceID) }
+        }
+        server.onSettingsChange = { [weak sessions] quality, fps in
+            Task { @MainActor in await sessions?.apply(quality: quality, fps: fps) }
+        }
+        // Stats come from whichever session is primary; snapshotting them on
+        // the main actor keeps this off the network queue's hands.
+        server.deltaStatsProvider = { [weak self] in self?.latestDeltaStats ?? DeltaEncoder.Stats() }
+        server.resetDeltaStats = { [weak sessions] in
+            Task { @MainActor in sessions?.sessions.values.first?.streamer.resetDeltaStats() }
+        }
         server.devices.onApprovalNeeded = { [weak self] device in
             Task { @MainActor in self?.askAbout(device) }
         }
-        server.onKeyframeRequest = { [weak streamer] in streamer?.requestKeyframe() }
-        if config.input, captureID != 0 {
-            let injector = InputInjector(displayID: captureID)
-            self.injector = injector
-            // Without Accessibility permission macOS drops every synthetic
-            // event without a word, so check before the first touch arrives.
-            needsInputPermission = !InputInjector.isPermitted
-            if needsInputPermission { InputInjector.requestPermission() }
-            server.onInput = { phase, x, y in
-                guard let phase = InputInjector.Phase(rawValue: phase) else { return }
-                injector.handle(phase: phase, x: x, y: y)
-            }
-            server.onInputRelease = { injector.releaseIfHeld() }
-        }
-        server.deltaStatsProvider = { [weak streamer] in streamer?.deltaStats ?? DeltaEncoder.Stats() }
-        server.resetDeltaStats = { [weak streamer] in streamer?.resetDeltaStats() }
-        server.onSettingsChange = { [weak streamer] quality, fps in
-            Task { await streamer?.update(quality: quality, fps: fps) }
-        }
+
         do {
             try server.start()
             self.server = server
@@ -122,8 +115,6 @@ final class AppController: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Trigger the Screen Recording prompt ourselves; without it SCK just
-        // fails with an opaque TCC error on first run.
         if !CGPreflightScreenCaptureAccess() {
             needsScreenPermission = true
             statusLine = "waiting for Screen Recording permission"
@@ -131,19 +122,18 @@ final class AppController: NSObject, NSApplicationDelegate {
             CGRequestScreenCaptureAccess()
         }
 
-        urls = buildURLs()
-
-        // Permission is granted out-of-process and macOS does not call us back,
-        // so poll until the capture actually starts rather than giving up.
-        if !(await startCaptureWithRetry(streamer: streamer, displayID: captureID)) {
-            return
+        if config.input {
+            needsInputPermission = !InputInjector.isPermitted
+            if needsInputPermission { InputInjector.requestPermission() }
         }
-        needsScreenPermission = false
+
+        urls = buildURLs()
         log("""
 
         ────────────────────────────────────────────────
          ExtraPad ready - \(statusLine)
          \(config.width)x\(config.height) @ \(config.fps) fps, quality \(config.quality)
+         Each iPad gets its own display, sized for it.
 
          Open Safari on the iPad and go to:
         \(urls.map { "   \($0)" }.joined(separator: "\n"))
@@ -156,6 +146,37 @@ final class AppController: NSObject, NSApplicationDelegate {
          Tip: Share > Add to Home Screen runs it full screen.
         ────────────────────────────────────────────────
         """)
+        rebuildMenu()
+    }
+
+    /// Brings a freshly created session to life: capture, input, and the
+    /// arrangement warning that used to live in the single-display path.
+    private func begin(_ session: DisplaySession) async {
+        if session.displayID != 0 {
+            if DisplayArrangement.isMirroring(session.displayID) {
+                log("[ExtraPad] WARNING: a virtual display came up mirroring; "
+                    + "choose Extend in Settings > Displays")
+            }
+            if config.input {
+                let injector = InputInjector(displayID: session.displayID)
+                injectors[session.id] = injector
+                server?.onInput = { [weak self] phase, x, y in
+                    guard let phase = InputInjector.Phase(rawValue: phase) else { return }
+                    // Input follows whichever display was most recently touched.
+                    self?.injectors[session.id]?.handle(phase: phase, x: x, y: y)
+                }
+                server?.onInputRelease = { [weak self] in
+                    self?.injectors.values.forEach { $0.releaseIfHeld() }
+                }
+            }
+        }
+        do {
+            try await session.startCapture()
+            statusLine = "\(sessions?.sessions.count ?? 1) display(s) active"
+        } catch {
+            needsScreenPermission = !CGPreflightScreenCaptureAccess()
+            log("[ExtraPad] Could not start capture for \(session.id): \(error.localizedDescription)")
+        }
         rebuildMenu()
     }
 
@@ -241,7 +262,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(header)
 
         let clients = server?.activeStreams ?? 0
-        let dropped = streamer?.droppedFrames ?? 0
+        let dropped = sessions?.sessions.values.first?.streamer.droppedFrames ?? 0
         let detail = NSMenuItem(
             title: "\(config.width)x\(config.height) · \(config.fps) fps · \(clients) device(s) · \(dropped) dropped",
             action: nil, keyEquivalent: "")
@@ -289,7 +310,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         hudItem.state = config.hud ? .on : .off
         menu.addItem(hudItem)
 
-        if virtualDisplay != nil {
+        if !config.mirror {
             menu.addItem(.separator())
             let positionItem = NSMenuItem(title: "Position", action: nil, keyEquivalent: "")
             let submenu = NSMenu()
@@ -359,14 +380,14 @@ final class AppController: NSObject, NSApplicationDelegate {
         Config.rememberHUD(config.hud)
         // Every frame carries the flag, so connected iPads pick this up
         // immediately - no reload.
-        streamer?.showHUD = config.hud
+        sessions?.setHUD(config.hud)
         rebuildMenu()
     }
 
     @objc private func choosePosition(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let position = DisplayPosition(rawValue: raw),
-              let displayID = virtualDisplay?.displayID else { return }
+              let displayID = sessions?.sessions.values.first?.displayID else { return }
         config.position = position
         Config.savedPosition = position
         DisplayArrangement.arrange(displayID, position: position)

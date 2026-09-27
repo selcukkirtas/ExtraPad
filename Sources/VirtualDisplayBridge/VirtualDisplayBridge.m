@@ -62,7 +62,8 @@ static void EPTrySet(id target, NSString *key, id value) {
                           pixelsWide:(NSUInteger)pixelsWide
                           pixelsHigh:(NSUInteger)pixelsHigh
                          refreshRate:(double)refreshRate
-                               scale:(NSUInteger)scale {
+                               scale:(NSUInteger)scale
+                              serial:(uint32_t)serial {
     self = [super init];
     if (!self) { return nil; }
     if (!EPVirtualDisplay.supported) {
@@ -82,7 +83,9 @@ static void EPTrySet(id target, NSString *key, id value) {
              [NSValue valueWithSize:NSMakeSize(pixelsWide / 4.6, pixelsHigh / 4.6)]);
     EPTrySet(descriptor, @"productID", @(0x1234));
     EPTrySet(descriptor, @"vendorID", @(0x3456));
-    EPTrySet(descriptor, @"serialNum", @(0x0001));
+    // Unique per display. Reusing one serial makes macOS think the second
+    // display is the same monitor and silently refuse to create it.
+    EPTrySet(descriptor, @"serialNum", @(serial));
     EPTrySet(descriptor, @"queue", dispatch_get_main_queue());
     EPTrySet(descriptor, @"terminationHandler", ^(id a, id b) {
         NSLog(@"[ExtraPad] Virtual display terminated.");
@@ -113,8 +116,8 @@ static void EPTrySet(id target, NSString *key, id value) {
     }
 
     _displayID = _display.displayID;
-    NSLog(@"[ExtraPad] Virtual display ready: id=%u %lux%lu@%.0fHz",
-          _displayID, (unsigned long)pixelsWide, (unsigned long)pixelsHigh, refreshRate);
+    NSLog(@"[ExtraPad] Virtual display ready: id=%u %lux%lu@%.0fHz (serial %u)",
+          _displayID, (unsigned long)pixelsWide, (unsigned long)pixelsHigh, refreshRate, serial);
     return self;
 }
 

@@ -14,11 +14,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Creates a virtual display advertising a single mode. Returns nil on failure.
 /// `scale` 2 registers a HiDPI (Retina) mode; 1 keeps one pixel per point.
+/// `serial` must differ between simultaneous displays: macOS treats two
+/// descriptors with the same product, vendor and serial as the same monitor and
+/// refuses to create the second one.
 - (nullable instancetype)initWithName:(NSString *)name
                           pixelsWide:(NSUInteger)pixelsWide
                           pixelsHigh:(NSUInteger)pixelsHigh
                          refreshRate:(double)refreshRate
-                               scale:(NSUInteger)scale;
+                               scale:(NSUInteger)scale
+                              serial:(uint32_t)serial;
 
 /// CGDirectDisplayID of the created display, 0 if it never came up.
 @property (readonly) CGDirectDisplayID displayID;

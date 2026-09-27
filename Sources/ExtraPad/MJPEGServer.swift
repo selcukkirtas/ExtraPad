@@ -10,9 +10,13 @@ final class MJPEGServer {
     private static let boundary = "extrapadframe"
 
     private var config: Config
-    private let broadcaster: FrameBroadcaster
-    private let patchBroadcaster: PatchBroadcaster
-    private let videoBroadcaster: PatchBroadcaster
+    /// Live sessions, readable from this queue without touching the main actor.
+    let registry = SessionRegistry()
+    /// Asks the main actor to create a display for a device that has none. The
+    /// only path here that has to be asynchronous.
+    var createSession: ((String, CGSize?, @escaping (SessionHandles?) -> Void) -> Void)?
+    /// Tells the host nobody is watching that device's display any more.
+    var releaseSession: ((String) -> Void)?
     let devices = DeviceRegistry()
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
@@ -74,12 +78,8 @@ final class MJPEGServer {
     var onVideoKeyframeRequest: (() -> Void)?
     var videoParameterSets: (() -> Data?)?
 
-    init(config: Config, broadcaster: FrameBroadcaster,
-         patchBroadcaster: PatchBroadcaster, videoBroadcaster: PatchBroadcaster) {
+    init(config: Config) {
         self.config = config
-        self.broadcaster = broadcaster
-        self.patchBroadcaster = patchBroadcaster
-        self.videoBroadcaster = videoBroadcaster
     }
 
     func start() throws {
@@ -320,7 +320,7 @@ final class MJPEGServer {
                  contentType: "text/html; charset=utf-8", setCookie: issueCookie)
 
         case "/stream":
-            startStream(conn)
+            startStream(conn, requestHead: requestHead)
 
         case "/version":
             let json = """
@@ -340,10 +340,19 @@ final class MJPEGServer {
                 return
             }
             let requested = query[WireNames.versionQuery].flatMap(Int.init) ?? WireProtocol.atlas
-            startWebSocket(conn, requestHead: requestHead, protocolVersion: requested)
+            // A client knows its own panel; the host has no way to guess it.
+            var size: CGSize?
+            if let raw = query["size"] {
+                let parts = raw.lowercased().split(separator: "x")
+                if parts.count == 2, let w = Int(parts[0]), let h = Int(parts[1]) {
+                    size = CGSize(width: w, height: h)
+                }
+            }
+            startWebSocket(conn, requestHead: requestHead,
+                           protocolVersion: requested, requestedSize: size)
 
         case "/snapshot":
-            if let frame = broadcaster.latestFrame {
+            if let frame = registry.primary?.frames.latestFrame {
                 send(conn, status: "200 OK", body: frame, contentType: "image/jpeg")
             } else {
                 send(conn, status: "503 Service Unavailable", body: Data("No frame yet\n".utf8),
@@ -376,7 +385,8 @@ final class MJPEGServer {
             let json = """
             {"width":\(config.width),"height":\(config.height),"scale":\(config.scale),\
             "fps":\(config.fps),"quality":\(config.quality),\
-            "framesPublished":\(broadcaster.framesPublished),\
+            "framesPublished":\(registry.primary?.frames.framesPublished ?? 0),\
+            "displays":\(registry.count),\
             "activeStreams":\(activeStreams),"clients":[\(clients)],\
             "input":{"enabled":\(config.input),"permitted":\(InputInjector.isPermitted)}\(delta)}
             """
@@ -450,7 +460,8 @@ final class MJPEGServer {
     // MARK: - WebSocket delta stream
 
     private func startWebSocket(_ conn: NWConnection, requestHead: String,
-                                protocolVersion: Int = WireProtocol.atlas) {
+                                protocolVersion: Int = WireProtocol.atlas,
+                                requestedSize: CGSize? = nil) {
         guard let handshake = WebSocket.handshakeResponse(requestHead: requestHead) else {
             send(conn, status: "400 Bad Request", body: Data("WebSocket upgrade expected\n".utf8),
                  contentType: "text/plain; charset=utf-8")
@@ -462,8 +473,36 @@ final class MJPEGServer {
         // serves both at the same time - an old iPad on the web client and a
         // new one on the native app.
         let usesVideo = protocolVersion >= WireProtocol.video
-        let broadcaster = usesVideo ? videoBroadcaster : patchBroadcaster
-        let requestKeyframe = usesVideo ? onVideoKeyframeRequest : onKeyframeRequest
+
+        // Each device gets its own display, sized for it. Resolution belongs to
+        // the display rather than to the connection, so an iPad 2 and a Retina
+        // mini cannot share one.
+        // The device cookie is how a returning iPad gets its own display back
+        // rather than a second one. A client without it - a bare test script -
+        // is treated as one anonymous device.
+        let deviceKey = Auth.cookieValue(named: Auth.deviceCookieName, in: requestHead)
+            ?? "anonymous"
+
+        if let existing = registry.handles(for: deviceKey) {
+            continueWebSocket(conn, handles: existing, usesVideo: usesVideo)
+        } else {
+            createSession?(deviceKey, requestedSize) { [weak self] created in
+                guard let self else { return }
+                guard let created else {
+                    self.send(conn, status: "503 Service Unavailable",
+                              body: Data("This Mac is already driving as many displays as it will\n".utf8),
+                              contentType: "text/plain; charset=utf-8")
+                    return
+                }
+                self.continueWebSocket(conn, handles: created, usesVideo: usesVideo)
+            }
+        }
+    }
+
+    private func continueWebSocket(_ conn: NWConnection, handles: SessionHandles,
+                                   usesVideo: Bool) {
+        let broadcaster = usesVideo ? handles.video : handles.patches
+        let requestKeyframe = usesVideo ? handles.requestVideoKeyframe : handles.requestPatchKeyframe
 
         let clientID = UInt64(bitPattern: Int64(ObjectIdentifier(conn).hashValue))
         let address: String
@@ -490,7 +529,7 @@ final class MJPEGServer {
             let now = Date()
             guard now.timeIntervalSince(lastKeyframeRequest.value) > 0.75 else { return }
             lastKeyframeRequest.store(now)
-            requestKeyframe?()
+            requestKeyframe()
         }
         var subscription: PatchBroadcaster.SubscriberID?
 
@@ -498,27 +537,28 @@ final class MJPEGServer {
             guard let self, !finished.exchange(true) else { return }
             if let subscription { broadcaster.unsubscribe(subscription) }
             self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
+            self.releaseSession?(handles.deviceID)
             conn.cancel()
         }
 
         // A decoder cannot start without SPS/PPS, and an idle screen produces
         // no new frames to carry them.
-        if usesVideo, let sets = videoParameterSets?() {
+        if usesVideo, let sets = handles.videoParameterSets() {
             conn.send(content: WebSocket.binaryFrame(sets), completion: .contentProcessed { _ in })
         }
 
         // The atlas client's canvas is blank, and an idle screen produces no
         // new frames to build a keyframe from - so prime it with the last full
         // frame we already have, then ask for a fresh one.
-        if !usesVideo, let latest = self.broadcaster.latestFrame {
+        if !usesVideo, let latest = handles.frames.latestFrame {
             let payload = AtlasMessage(
                 regions: [AtlasMessage.Region(sourceY: 0, destX: 0, destY: 0,
-                                              width: config.width * config.scale,
-                                              height: config.height * config.scale)],
+                                              width: handles.width * handles.scale,
+                                              height: handles.height * handles.scale)],
                 isKeyframe: true, showsDiagnostics: config.hud, jpeg: latest).encoded()
             conn.send(content: WebSocket.binaryFrame(payload), completion: .contentProcessed { _ in })
         }
-        requestKeyframe?()
+        requestKeyframe()
 
         subscription = broadcaster.subscribe { [weak self] group in
             guard let self, !finished.value else { return }
@@ -600,7 +640,23 @@ final class MJPEGServer {
         }
     }
 
-    private func startStream(_ conn: NWConnection) {
+    private func startStream(_ conn: NWConnection, requestHead: String) {
+        // The fallback client needs a display of its own for the same reason
+        // the others do: its resolution is its own.
+        let deviceKey = Auth.cookieValue(named: Auth.deviceCookieName, in: requestHead)
+            ?? "anonymous"
+        if let existing = registry.handles(for: deviceKey) {
+            continueStream(conn, handles: existing)
+        } else {
+            createSession?(deviceKey, nil) { [weak self] created in
+                guard let self, let created else { conn.cancel(); return }
+                self.continueStream(conn, handles: created)
+            }
+        }
+    }
+
+    private func continueStream(_ conn: NWConnection, handles: SessionHandles) {
+
         let header = """
         HTTP/1.1 200 OK\r
         Content-Type: multipart/x-mixed-replace; boundary=\(Self.boundary)\r
@@ -631,12 +687,13 @@ final class MJPEGServer {
 
         let teardown: () -> Void = { [weak self] in
             guard let self, !finished.exchange(true) else { return }
-            if let subscription { self.broadcaster.unsubscribe(subscription) }
+            if let subscription { handles.frames.unsubscribe(subscription) }
             self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
+            self.releaseSession?(handles.deviceID)
             conn.cancel()
         }
 
-        subscription = broadcaster.subscribe { [weak self] frame in
+        subscription = handles.frames.subscribe { [weak self] frame in
             guard let self, !finished.value else { return }
             if inFlight.exchange(true) {
                 self.clientLock.lock()

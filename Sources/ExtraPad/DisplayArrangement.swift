@@ -23,7 +23,10 @@ enum DisplayArrangement {
     /// Turns mirroring off and parks the display on the requested side of the
     /// existing arrangement.
     @discardableResult
-    static func arrange(_ displayID: CGDirectDisplayID, position: DisplayPosition) -> Bool {
+    /// `slot` stacks additional displays beyond the first, so two iPads do not
+    /// land on top of each other.
+    static func arrange(_ displayID: CGDirectDisplayID, position: DisplayPosition,
+                        slot: Int = 0) -> Bool {
         guard displayID != 0 else { return false }
 
         let ourSize = CGDisplayBounds(displayID).size
@@ -35,12 +38,16 @@ enum DisplayArrangement {
         let union = others.dropFirst().reduce(others[0]) { $0.union($1) }
         let main = CGDisplayBounds(CGMainDisplayID())
 
+        // Each extra display is offset by its own height so they tile rather
+        // than overlap; macOS would otherwise shuffle them itself.
+        let stagger = CGFloat(slot) * ourSize.height
         let origin: CGPoint
         switch position {
-        case .right: origin = CGPoint(x: union.maxX, y: main.minY)
-        case .left:  origin = CGPoint(x: union.minX - ourSize.width, y: main.minY)
-        case .below: origin = CGPoint(x: main.minX, y: union.maxY)
-        case .above: origin = CGPoint(x: main.minX, y: union.minY - ourSize.height)
+        case .right: origin = CGPoint(x: union.maxX, y: main.minY + stagger)
+        case .left:  origin = CGPoint(x: union.minX - ourSize.width, y: main.minY + stagger)
+        case .below: origin = CGPoint(x: main.minX + CGFloat(slot) * ourSize.width, y: union.maxY)
+        case .above: origin = CGPoint(x: main.minX + CGFloat(slot) * ourSize.width,
+                                      y: union.minY - ourSize.height)
         }
 
         var config: CGDisplayConfigRef?
