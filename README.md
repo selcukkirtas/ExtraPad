@@ -61,6 +61,7 @@ Konum, kalite ve kare hizi **hatirlanir**: ister bayrakla ister `/set` ile
 degistirin, bir sonraki acilista ayni ayarla baslar. Sanal ekran her acilista
 yeniden olusturuldugu icin macOS bunlari kendisi hatirlayamiyor.
 | `--port N` | `8777` | |
+| `--no-input` | giris acik | iPad'den dokunma girisini kapatir |
 | `--mirror` | kapali | Sanal ekran yerine ana ekrani yansitir |
 
 Log gormek icin uygulamayi paket icinden dogrudan calistirin:
@@ -200,10 +201,34 @@ Delta modunun tasarimini eski iPad belirledi:
   Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince
   3 keyframe ve 1.27 Mbit/s'e dustu.
 
+## Dokunma girisi
+
+iPad'deki tek parmak Mac'in imlecini surer: dokunmak tiklar, kaydirmak surukler.
+Uc parmakla dokunmak ustteki bilgi seridini acip kapatir - tek parmak artik giris
+oldugu icin serit oraya tasindi.
+
+Koordinatlar acik olan ayni WebSocket uzerinden metin olarak doner
+(`D`/`M`/`U` + x + y), sanal ekranin kendi piksel uzayinda. Sunucu bunlari
+ekranin global duzendeki konumuyla toplayip `CGEvent` olarak gonderir. Konum her
+seferinde yeniden okunur, cunku ekrani menuden tasiyabiliyorsunuz.
+
+**Erisilebilirlik izni gerekir.** Izin yoksa macOS gonderilen olaylari sessizce
+yutar, yani uygulama bozuk gorunur ama hata vermez. Bu yuzden ilk calistirmada
+izin istenir ve eksikse menu cubugunda "Dokunma girisi icin Erisilebilirlik
+iznini ac..." satiri belirir. Durumu `/info` icindeki `input.permitted`
+alanindan da gorebilirsiniz.
+
+Sadece goruntu isteyenler icin `--no-input`.
+
+Iki ince nokta:
+
+- **Hareket mesajlari ~60/sn ile sinirlanir.** Mac zaten yakalama hizindan
+  fazlasini kullanamiyor ve her mesajin bedelini iPad oduyor.
+- **Baglanti parmak basiliyken koparsa dugme birakilir.** Aksi halde Mac'te
+  basili kalmis bir fare dugmesiyle kalirdiniz.
+
 ## Bilinen sinirlar
 
-- **Dokunma girisi yok.** Sadece goruntu. iPad'den Mac'i kontrol etmek ayri bir
-  istemci ve Erisilebilirlik izni gerektirir.
 - **Kablolu baglanti yok.** Safari USB uzerinden Mac'e ulasamaz. Tek istisna:
   iPad hucresel modelse USB tethering ile daha kararli bir IP baglantisi kurulabilir.
   Gercek kablolu destek native bir iPad uygulamasi ister, o da iOS 15+ demek.

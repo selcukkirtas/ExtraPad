@@ -17,6 +17,8 @@ struct Config {
     var port: UInt16 = 8777
     /// Mirror the main display instead of creating a second one.
     var mirror = false
+    /// Let touches on the iPad drive the Mac's cursor.
+    var input = true
     /// Which side of the existing arrangement the iPad sits on. Remembered
     /// between launches, because the virtual display is new every time and
     /// macOS has nothing to remember it by.
@@ -74,6 +76,7 @@ struct Config {
             case "--scale":    if let v = next(), let n = Int(v) { c.scale = max(1, min(2, n)) }
             case "--refresh":  if let v = next(), let r = Double(v) { c.refreshRate = r }
             case "--mirror":   c.mirror = true
+            case "--no-input": c.input = false
             case "--position":
                 if let v = next(), let p = DisplayPosition(rawValue: v.lowercased()) {
                     c.position = p

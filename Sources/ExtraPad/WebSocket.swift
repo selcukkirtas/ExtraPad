@@ -59,24 +59,72 @@ enum WebSocket {
         return frame
     }
 
-    enum ClientFrame {
+    enum ClientMessage {
         case close
-        /// Any data frame from the browser means "my canvas is wrong, send a
-        /// full frame". That is the client's only way to recover without
-        /// dropping the connection - and reconnecting to recover was itself
-        /// causing a keyframe loop.
+        /// "my canvas is wrong, send a full frame"
         case resync
-        case other
+        /// A touch, in the virtual display's own pixel coordinates.
+        case input(phase: String, x: Int, y: Int)
     }
 
-    /// Reads the first frame in `data`. Client frames are masked, but we only
-    /// need the opcode, so the mask is skipped rather than applied.
-    static func clientFrame(_ data: Data) -> ClientFrame {
-        guard let first = data.first else { return .other }
-        switch first & 0x0F {
-        case 0x8:        return .close
-        case 0x1, 0x2:   return .resync
-        default:         return .other
+    /// Accumulates bytes and yields whole client frames.
+    ///
+    /// Client frames are masked, and a message can straddle two reads, so this
+    /// has to buffer properly rather than peek at the first byte - which was
+    /// enough while the only thing the browser ever sent was "resync".
+    struct ClientFrameReader {
+        private var buffer = Data()
+
+        mutating func append(_ data: Data) { buffer.append(data) }
+
+        mutating func next() -> ClientMessage? {
+            while true {
+                guard buffer.count >= 2 else { return nil }
+                let bytes = [UInt8](buffer)
+                let opcode = bytes[0] & 0x0F
+                let masked = (bytes[1] & 0x80) != 0
+                var length = Int(bytes[1] & 0x7F)
+                var offset = 2
+
+                if length == 126 {
+                    guard bytes.count >= 4 else { return nil }
+                    length = Int(bytes[2]) << 8 | Int(bytes[3])
+                    offset = 4
+                } else if length == 127 {
+                    guard bytes.count >= 10 else { return nil }
+                    length = 0
+                    for i in 2..<10 { length = length << 8 | Int(bytes[i]) }
+                    offset = 10
+                }
+
+                var maskKey: [UInt8] = []
+                if masked {
+                    guard bytes.count >= offset + 4 else { return nil }
+                    maskKey = Array(bytes[offset..<(offset + 4)])
+                    offset += 4
+                }
+                guard bytes.count >= offset + length else { return nil }
+
+                var payload = Array(bytes[offset..<(offset + length)])
+                if masked {
+                    for i in payload.indices { payload[i] ^= maskKey[i % 4] }
+                }
+                buffer.removeFirst(offset + length)
+
+                if opcode == 0x8 { return .close }
+                guard opcode == 0x1 || opcode == 0x2 else { continue }   // ping/pong etc.
+                if let message = parse(String(decoding: payload, as: UTF8.self)) { return message }
+            }
+        }
+
+        /// Wire text: "R" to resync, or "<phase> <x> <y>" where phase is D, M or U.
+        private func parse(_ text: String) -> ClientMessage? {
+            if text == "R" { return .resync }
+            let parts = text.split(separator: " ")
+            guard parts.count == 3,
+                  ["D", "M", "U"].contains(String(parts[0])),
+                  let x = Int(parts[1]), let y = Int(parts[2]) else { return nil }
+            return .input(phase: String(parts[0]), x: x, y: y)
         }
     }
 }

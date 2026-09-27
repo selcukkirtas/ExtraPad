@@ -137,7 +137,8 @@ enum WebClient {
 </head>
 <body>
   <canvas id="screen" width="__W__" height="__H__"></canvas>
-  <div id="hud"><b>ExtraPad delta</b> <span class="dim" id="info">baglaniyor&hellip;</span></div>
+  <div id="hud"><b>ExtraPad</b> <span class="dim" id="info">baglaniyor&hellip;</span>
+    <span class="dim"> &middot; uc parmak: bilgi serisi</span></div>
 <script>
 (function () {
   "use strict";
@@ -248,11 +249,65 @@ enum WebClient {
     ws.onerror = function () { if (ws) { ws.close(); } };
   }
 
+  // --- touch input -------------------------------------------------------
+  //
+  // One finger drives the Mac's cursor. The HUD moved to a three-finger tap so
+  // it does not steal the taps that are now input.
+  var lastMove = 0;
+
+  function toDisplay(touch) {
+    var rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.round((touch.clientX - rect.left) / rect.width * canvas.width),
+      y: Math.round((touch.clientY - rect.top) / rect.height * canvas.height)
+    };
+  }
+
+  function sendInput(phase, touch) {
+    if (!ws || ws.readyState !== 1) { return; }
+    var p = toDisplay(touch);
+    ws.send(phase + " " + p.x + " " + p.y);
+  }
+
+  function onStart(e) {
+    if (e.touches.length >= 3) { toggleHud(); return; }
+    if (e.touches.length !== 1) { return; }
+    e.preventDefault();
+    sendInput("D", e.touches[0]);
+  }
+
+  function onMove(e) {
+    if (e.touches.length !== 1) { return; }
+    e.preventDefault();
+    // The Mac cannot use more than the capture rate, and each message is a
+    // round trip the iPad pays for.
+    var now = new Date().getTime();
+    if (now - lastMove < 16) { return; }
+    lastMove = now;
+    sendInput("M", e.touches[0]);
+  }
+
+  function onEnd(e) {
+    e.preventDefault();
+    var touch = e.changedTouches && e.changedTouches[0];
+    if (touch) { sendInput("U", touch); }
+  }
+
   function toggleHud() {
     hud.className = hud.className === "hidden" ? "" : "hidden";
   }
-  document.addEventListener("touchstart", toggleHud, false);
-  document.addEventListener("click", toggleHud, false);
+
+  canvas.addEventListener("touchstart", onStart, false);
+  canvas.addEventListener("touchmove", onMove, false);
+  canvas.addEventListener("touchend", onEnd, false);
+  canvas.addEventListener("touchcancel", onEnd, false);
+  // Desktop browsers, for testing from the Mac itself.
+  canvas.addEventListener("mousedown", function (e) { sendInput("D", e); }, false);
+  canvas.addEventListener("mousemove", function (e) {
+    if (e.buttons === 1) { sendInput("M", e); }
+  }, false);
+  canvas.addEventListener("mouseup", function (e) { sendInput("U", e); }, false);
+  hud.addEventListener("click", toggleHud, false);
 
   if (!window.WebSocket) {
     info.innerHTML = "bu Safari WebSocket desteklemiyor - / adresini kullanin";

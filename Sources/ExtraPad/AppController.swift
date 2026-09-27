@@ -15,6 +15,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var urls: [String] = []
     private var statusLine = "baslatiliyor..."
     private var needsScreenPermission = false
+    private var needsInputPermission = false
+    private var injector: InputInjector?
     private var retryTask: Task<Void, Never>?
 
     init(config: Config) {
@@ -26,7 +28,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         installStatusItem()
         retryTask = Task { await startPipeline() }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.rebuildMenu() }
+            Task { @MainActor in
+                if self?.needsInputPermission == true, InputInjector.isPermitted {
+                    self?.needsInputPermission = false
+                }
+                self?.rebuildMenu()
+            }
         }
     }
 
@@ -81,6 +88,19 @@ final class AppController: NSObject, NSApplicationDelegate {
                                  broadcaster: streamer.broadcaster,
                                  patchBroadcaster: streamer.patchBroadcaster)
         server.onKeyframeRequest = { [weak streamer] in streamer?.requestKeyframe() }
+        if config.input, captureID != 0 {
+            let injector = InputInjector(displayID: captureID)
+            self.injector = injector
+            // Without Accessibility permission macOS drops every synthetic
+            // event without a word, so check before the first touch arrives.
+            needsInputPermission = !InputInjector.isPermitted
+            if needsInputPermission { InputInjector.requestPermission() }
+            server.onInput = { phase, x, y in
+                guard let phase = InputInjector.Phase(rawValue: phase) else { return }
+                injector.handle(phase: phase, x: x, y: y)
+            }
+            server.onInputRelease = { injector.releaseIfHeld() }
+        }
         server.deltaStatsProvider = { [weak streamer] in streamer?.deltaStats ?? DeltaEncoder.Stats() }
         server.resetDeltaStats = { [weak streamer] in streamer?.resetDeltaStats() }
         server.onSettingsChange = { [weak streamer] quality, fps in
@@ -170,6 +190,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    @objc private func openAccessibilitySettings() {
+        InputInjector.openSettings()
+    }
+
     @objc private func openScreenRecordingSettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
         NSWorkspace.shared.open(url)
@@ -206,6 +230,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             action: nil, keyEquivalent: "")
         detail.isEnabled = false
         menu.addItem(detail)
+
+        if needsInputPermission {
+            menu.addItem(.separator())
+            let grant = NSMenuItem(title: "Dokunma girisi icin Erisilebilirlik iznini ac...",
+                                   action: #selector(openAccessibilitySettings), keyEquivalent: "")
+            grant.target = self
+            menu.addItem(grant)
+        }
 
         if needsScreenPermission {
             menu.addItem(.separator())

@@ -41,6 +41,10 @@ final class MJPEGServer {
     var onSettingsChange: ((Double?, Int?) -> Void)?
     /// Called when a delta client needs a full frame to draw on top of.
     var onKeyframeRequest: (() -> Void)?
+    /// Called with each touch coming back from a client.
+    var onInput: ((String, Int, Int) -> Void)?
+    /// Called when a client that might be mid-drag goes away.
+    var onInputRelease: (() -> Void)?
     /// Delta-encoder counters, for /info.
     var deltaStatsProvider: (() -> DeltaEncoder.Stats)?
     var resetDeltaStats: (() -> Void)?
@@ -187,7 +191,8 @@ final class MJPEGServer {
             {"width":\(config.width),"height":\(config.height),"scale":\(config.scale),\
             "fps":\(config.fps),"quality":\(config.quality),\
             "framesPublished":\(broadcaster.framesPublished),\
-            "activeStreams":\(activeStreams),"clients":[\(clients)]\(delta)}
+            "activeStreams":\(activeStreams),"clients":[\(clients)],\
+            "input":{"enabled":\(config.input),"permitted":\(InputInjector.isPermitted)}\(delta)}
             """
             send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
 
@@ -327,20 +332,24 @@ final class MJPEGServer {
             })
         }
 
-        // The browser sends two things: a close frame, or a resync request when
-        // its canvas has fallen out of step.
+        // The browser sends resync requests and touches.
+        var reader = WebSocket.ClientFrameReader()
         func readClient() {
-            conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
-                if error != nil || isComplete { teardown(); return }
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
+                if error != nil || isComplete { self.onInputRelease?(); teardown(); return }
                 if let data {
-                    switch WebSocket.clientFrame(data) {
-                    case .close:
-                        teardown()
-                        return
-                    case .resync:
-                        if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
-                    case .other:
-                        break
+                    reader.append(data)
+                    while let message = reader.next() {
+                        switch message {
+                        case .close:
+                            self.onInputRelease?()
+                            teardown()
+                            return
+                        case .resync:
+                            if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
+                        case let .input(phase, x, y):
+                            self.onInput?(phase, x, y)
+                        }
                     }
                 }
                 if !finished.value { readClient() }
