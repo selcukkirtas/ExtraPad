@@ -87,6 +87,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         let server = MJPEGServer(config: config,
                                  broadcaster: streamer.broadcaster,
                                  patchBroadcaster: streamer.patchBroadcaster)
+        server.devices.onApprovalNeeded = { [weak self] device in
+            Task { @MainActor in self?.askAbout(device) }
+        }
         server.onKeyframeRequest = { [weak streamer] in streamer?.requestKeyframe() }
         if config.input, captureID != 0 {
             let injector = InputInjector(displayID: captureID)
@@ -286,6 +289,24 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         if config.auth {
             menu.addItem(.separator())
+            let approved = server?.devices.approvedDevices ?? []
+            let header = NSMenuItem(
+                title: approved.isEmpty ? "Onayli cihaz yok" : "Onayli cihazlar: \(approved.count)",
+                action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for device in approved.prefix(5) {
+                let item = NSMenuItem(title: "   " + device.address, action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                menu.addItem(item)
+            }
+            if !approved.isEmpty {
+                let forget = NSMenuItem(title: "Cihaz izinlerini sil",
+                                        action: #selector(forgetDevices), keyEquivalent: "")
+                forget.target = self
+                menu.addItem(forget)
+            }
+
             let rotate = NSMenuItem(title: "Yeni erisim anahtari uret",
                                     action: #selector(rotateKey), keyEquivalent: "")
             rotate.target = self
@@ -315,6 +336,42 @@ final class AppController: NSObject, NSApplicationDelegate {
         Config.savedPosition = position
         DisplayArrangement.arrange(displayID, position: position)
         rebuildMenu()
+    }
+
+    /// Asks the person at the Mac whether a newly seen device may connect.
+    /// Deliberately a modal alert rather than a notification: this hands over
+    /// the screen and the mouse, so it should interrupt.
+    private func askAbout(_ device: DeviceRegistry.Device) {
+        let consequence = config.input
+            ? "ekrani gorecek ve fareyi surebilecek"
+            : "ekrani gorecek"
+        let alert = NSAlert()
+        alert.messageText = "Yeni bir cihaz baglanmak istiyor"
+        alert.informativeText = "Adres: " + device.address + "\n\n"
+            + "Izin verirseniz bu cihaz " + consequence + ".\n"
+            + "Beklemediginiz bir cihazsa Reddet'i secin."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Izin Ver")
+        alert.addButton(withTitle: "Reddet")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            server?.devices.approve(device)
+        } else {
+            server?.devices.deny(device)
+        }
+        rebuildMenu()
+    }
+
+    @objc private func forgetDevices() {
+        let alert = NSAlert()
+        alert.messageText = "Tum cihaz izinleri silinsin mi?"
+        alert.informativeText = "Her cihaz icin yeniden onay sorulacak."
+        alert.addButton(withTitle: "Sil")
+        alert.addButton(withTitle: "Vazgec")
+        if alert.runModal() == .alertFirstButtonReturn {
+            server?.devices.forgetAll()
+            rebuildMenu()
+        }
     }
 
     @objc private func rotateKey() {

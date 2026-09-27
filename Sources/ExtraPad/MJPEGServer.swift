@@ -11,6 +11,7 @@ final class MJPEGServer {
     private var config: Config
     private let broadcaster: FrameBroadcaster
     private let patchBroadcaster: PatchBroadcaster
+    let devices = DeviceRegistry()
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
 
@@ -151,15 +152,34 @@ final class MJPEGServer {
         }
 
         guard authorised else {
-            let body = WebClient.unauthorisedPage()
-            var header = "HTTP/1.1 401 Unauthorized\r\n"
-            header += "Content-Type: text/html; charset=utf-8\r\n"
-            header += "Content-Length: \(body.utf8.count)\r\n"
-            header += "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
-            var out = Data(header.utf8)
-            out.append(Data(body.utf8))
-            conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
+            sendPage(conn, status: "401 Unauthorized", html: WebClient.unauthorisedPage())
             return
+        }
+
+        // The key proves the client knows the secret. It cannot prove the client
+        // is one of the owner's devices - so the owner is asked, once, per
+        // device. A leaked key is then still not enough by itself.
+        var deviceCookie: String?
+        if config.auth {
+            let existing = Auth.cookieValue(named: Auth.deviceCookieName, in: requestHead)
+            let deviceID = existing ?? DeviceRegistry.newDeviceID()
+            if existing == nil { deviceCookie = deviceID }
+
+            let address: String
+            if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "bilinmiyor" }
+
+            switch devices.status(of: deviceID, address: address) {
+            case .approved:
+                break
+            case .pending:
+                sendPage(conn, status: "200 OK", html: WebClient.pendingApprovalPage(),
+                         setCookie: issueCookie, deviceCookie: deviceCookie)
+                return
+            case .denied:
+                sendPage(conn, status: "403 Forbidden", html: WebClient.deniedPage(),
+                         deviceCookie: deviceCookie)
+                return
+            }
         }
 
         switch path {
@@ -168,7 +188,8 @@ final class MJPEGServer {
             // bytes and several times the frame rate.
             let html = WebClient.deltaPage(width: config.width, height: config.height)
             send(conn, status: "200 OK", body: Data(html.utf8),
-                 contentType: "text/html; charset=utf-8", setCookie: issueCookie)
+                 contentType: "text/html; charset=utf-8",
+                 setCookie: issueCookie, deviceCookie: deviceCookie)
 
         case "/mjpeg":
             // Kept as a fallback: it needs no WebSocket, no canvas and no
@@ -266,13 +287,21 @@ final class MJPEGServer {
         }
     }
 
+    private func sendPage(_ conn: NWConnection, status: String, html: String,
+                          setCookie: Bool = false, deviceCookie: String? = nil) {
+        send(conn, status: status, body: Data(html.utf8),
+             contentType: "text/html; charset=utf-8",
+             setCookie: setCookie, deviceCookie: deviceCookie)
+    }
+
     private func send(_ conn: NWConnection, status: String, body: Data, contentType: String,
-                      setCookie: Bool = false) {
+                      setCookie: Bool = false, deviceCookie: String? = nil) {
         var header = "HTTP/1.1 \(status)\r\n"
         header += "Content-Type: \(contentType)\r\n"
         header += "Content-Length: \(body.count)\r\n"
         header += "Cache-Control: no-store\r\n"
         if setCookie { header += Auth.setCookieHeader }
+        if let deviceCookie { header += Auth.deviceCookieHeader(deviceCookie) }
         header += "Connection: close\r\n\r\n"
         var out = Data(header.utf8)
         out.append(body)

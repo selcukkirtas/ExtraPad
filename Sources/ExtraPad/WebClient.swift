@@ -360,4 +360,82 @@ enum WebClient {
 </html>
 """#
     }
+
+    /// Shown while the Mac's owner decides. Polls rather than asking the user
+    /// to reload, so approving on the Mac is enough to get going.
+    static func pendingApprovalPage() -> String {
+        return #"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>ExtraPad</title>
+<style>
+  body { margin: 0; background: #16181c; color: #e8eaed;
+         font: 16px -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         height: 100vh; text-align: center; }
+  .card { max-width: 30em; padding: 2em; }
+  h1 { font-size: 1.25em; margin: 0 0 .6em; }
+  p { color: #9aa0a6; line-height: 1.5; margin: 0 0 1em; }
+  .dot { display: inline-block; width: .5em; height: .5em; border-radius: 50%;
+         background: #8ec7fb; margin: 0 .15em;
+         -webkit-animation: pulse 1.2s infinite ease-in-out; }
+  .dot:nth-child(2) { -webkit-animation-delay: .2s; }
+  .dot:nth-child(3) { -webkit-animation-delay: .4s; }
+  @-webkit-keyframes pulse { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Mac'te onay bekleniyor</h1>
+    <p>Mac'inizde bu cihaz icin bir soru cikti. <b>Izin Ver</b> dediginizde ekran
+       burada acilacak.</p>
+    <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  </div>
+<script>
+(function () {
+  "use strict";
+  // Reloading is enough: once approved, the same URL serves the screen.
+  setTimeout(function () { location.reload(); }, 2000);
+}());
+</script>
+</body>
+</html>
+"""#
+    }
+
+    /// Shown to a device the owner turned down.
+    static func deniedPage() -> String {
+        return #"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ExtraPad</title>
+<style>
+  body { margin: 0; background: #16181c; color: #e8eaed;
+         font: 16px -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         height: 100vh; text-align: center; }
+  .card { max-width: 28em; padding: 2em; }
+  h1 { font-size: 1.25em; margin: 0 0 .6em; }
+  p { color: #9aa0a6; line-height: 1.5; margin: 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bu cihaza izin verilmedi</h1>
+    <p>Mac'te menu cubugundaki ExtraPad simgesinden cihaz listesini
+       sifirlayarak yeniden deneyebilirsiniz.</p>
+  </div>
+</body>
+</html>
+"""#
+    }
 }

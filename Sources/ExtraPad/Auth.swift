@@ -62,19 +62,30 @@ enum Auth {
         return difference == 0
     }
 
-    /// Pulls our cookie out of a raw request head.
-    static func cookieValue(in requestHead: String) -> String? {
+    static let deviceCookieName = "extrapad_device"
+
+    static func deviceCookieHeader(_ id: String) -> String {
+        "Set-Cookie: \(deviceCookieName)=\(id); Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax\r\n"
+    }
+
+    /// Pulls a named cookie out of a raw request head.
+    static func cookieValue(named name: String, in requestHead: String) -> String? {
         for line in requestHead.split(separator: "\r\n") {
             guard line.lowercased().hasPrefix("cookie:") else { continue }
             let value = line.dropFirst("cookie:".count)
             for pair in value.split(separator: ";") {
                 let parts = pair.split(separator: "=", maxSplits: 1)
                 guard parts.count == 2,
-                      parts[0].trimmingCharacters(in: .whitespaces) == cookieName else { continue }
+                      parts[0].trimmingCharacters(in: .whitespaces) == name else { continue }
                 return parts[1].trimmingCharacters(in: .whitespaces)
             }
         }
         return nil
+    }
+
+    /// Pulls our cookie out of a raw request head.
+    static func cookieValue(in requestHead: String) -> String? {
+        cookieValue(named: cookieName, in: requestHead)
     }
 
     static var setCookieHeader: String {

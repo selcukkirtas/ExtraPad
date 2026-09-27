@@ -229,6 +229,26 @@ Menuden **Yeni erisim anahtari uret** ile anahtar degistirilebilir; o an bagli
 cihazlar duser ve kisayollarin yenilenmesi gerekir. Guvendiginiz bir agda
 tamamen kapatmak icin `--no-auth`.
 
+### Cihaz onayi
+
+Anahtar "bu istemci sirri biliyor mu" sorusunu cevaplar. "Bu benim cihazim mi"
+sorusunu cevaplamaz - ve dokunma girisi geldiginden beri asil onemli soru bu.
+
+Bu yuzden **her yeni cihaz icin Mac'te onay sorulur.** Dogru anahtarla gelen
+bilinmeyen bir cihaz "Mac'te onay bekleniyor" sayfasini gorur; ekrani ancak siz
+Mac'te **Izin Ver** dedikten sonra alir. Yani anahtar sizsa bile tek basina
+yetmez, fiziksel onayiniz gerekir. Karar hatirlanir; menuden **Cihaz izinlerini
+sil** ile sifirlanir.
+
+Cihaz, kendisine verilen rastgele bir cerez kimligiyle hatirlanir. Bu bir kimlik
+degil bir yetkidir - ama anahtar ve insan onayiyla birlestiginde sizdirilmis bir
+anahtarin tek basina ise yaramamasini saglar.
+
+**Neden iCloud hesabi eslestirilmiyor:** Safari bir web sayfasina Apple ID
+hakkinda hicbir sey vermiyor, ve CloudKit uzerinden hesap eslestirmek native bir
+uygulama gerektiriyor - o da iOS 15+ demek. Bu iPad iOS 9'da, yani o yol kapali.
+Mac'te insan onayi, ayni amaci bu kisitlar altinda daha iyi karsiliyor.
+
 **Bunun ne oldugu konusunda net olalim:** duz HTTP uzerinde, yerel agda paylasilan
 bir sir. Adresi bilen birini durdurur. Ag trafiginizi okuyabilen birini
 durdurmaz, cunku hem anahtar hem ekran goruntusu sifresiz gider. Bunu TLS
