@@ -8,10 +8,12 @@ struct Config {
     var refreshRate = 60.0
     /// 1 = one pixel per point (cheapest to encode and to decode on an old iPad).
     var scale = 1
-    /// Frames pushed per second. Old iPads JPEG-decode roughly 20-30 fps at 1024x768.
-    var fps = 24
-    /// JPEG quality, 0...1. Below ~0.45 text starts to smear.
-    var quality = 0.6
+    /// Frames pushed per second. Remembered between launches, like the other
+    /// tuning knobs, so a setup you tuned once survives a restart.
+    var fps = Config.saved(Config.fpsKey, default: 24)
+    /// JPEG quality, 0...1. In delta mode this can sit near 1.0, since only the
+    /// changed rectangles are sent.
+    var quality = Config.saved(Config.qualityKey, default: 0.8)
     var port: UInt16 = 8777
     /// Mirror the main display instead of creating a second one.
     var mirror = false
@@ -21,6 +23,17 @@ struct Config {
     var position = Config.savedPosition
 
     static let positionDefaultsKey = "ExtraPadPosition"
+    static let fpsKey = "ExtraPadFPS"
+    static let qualityKey = "ExtraPadQuality"
+
+    static func saved<T>(_ key: String, default fallback: T) -> T {
+        (UserDefaults.standard.object(forKey: key) as? T) ?? fallback
+    }
+
+    static func remember(fps: Int?, quality: Double?) {
+        if let fps { UserDefaults.standard.set(fps, forKey: fpsKey) }
+        if let quality { UserDefaults.standard.set(quality, forKey: qualityKey) }
+    }
 
     static var savedPosition: DisplayPosition {
         get {
@@ -47,8 +60,16 @@ struct Config {
                         c.width = w; c.height = h
                     }
                 }
-            case "--fps":      if let v = next(), let n = Int(v) { c.fps = max(1, min(60, n)) }
-            case "--quality":  if let v = next(), let q = Double(v) { c.quality = max(0.1, min(1.0, q)) }
+            case "--fps":
+                if let v = next(), let n = Int(v) {
+                    c.fps = max(1, min(60, n))
+                    Config.remember(fps: c.fps, quality: nil)
+                }
+            case "--quality":
+                if let v = next(), let q = Double(v) {
+                    c.quality = max(0.1, min(1.0, q))
+                    Config.remember(fps: nil, quality: c.quality)
+                }
             case "--port":     if let v = next(), let n = UInt16(v) { c.port = n }
             case "--scale":    if let v = next(), let n = Int(v) { c.scale = max(1, min(2, n)) }
             case "--refresh":  if let v = next(), let r = Double(v) { c.refreshRate = r }
@@ -76,8 +97,8 @@ struct Config {
 
     Kullanim: ExtraPad [secenekler]
       --size WxH      Sanal ekran cozunurlugu (varsayilan 1024x768)
-      --fps N         Saniyedeki kare sayisi (varsayilan 24)
-      --quality Q     JPEG kalitesi 0.1-1.0 (varsayilan 0.6)
+      --fps N         Saniyedeki kare sayisi (hatirlanir, varsayilan 24)
+      --quality Q     JPEG kalitesi 0.1-1.0 (hatirlanir, varsayilan 0.8)
       --scale 1|2     2 = HiDPI/Retina mod (varsayilan 1)
       --refresh Hz    Sanal ekran tazeleme hizi (varsayilan 60)
       --port N        HTTP portu (varsayilan 8777)

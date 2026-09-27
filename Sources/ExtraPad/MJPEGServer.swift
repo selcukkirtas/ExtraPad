@@ -186,6 +186,8 @@ final class MJPEGServer {
             } else {
                 if let quality { config.quality = max(0.1, min(1.0, quality)) }
                 if let fps { config.fps = max(1, min(60, fps)) }
+                Config.remember(fps: fps == nil ? nil : config.fps,
+                                quality: quality == nil ? nil : config.quality)
                 onSettingsChange?(quality, fps)
                 let body = "{\"quality\":\(config.quality),\"fps\":\(config.fps)}"
                 send(conn, status: "200 OK", body: Data(body.utf8), contentType: "application/json")

@@ -52,10 +52,14 @@ build/ExtraPad.app/Contents/MacOS/ExtraPad --help
 | Secenek | Varsayilan | Not |
 |---|---|---|
 | `--size WxH` | `1024x768` | Eski 9.7" iPad'ler Safari'ye 1024x768 bildirir |
-| `--fps N` | `24` | Eski iPad'ler 1024x768'te ~20-30 kare/sn cozebilir |
-| `--quality Q` | `0.6` | 0.45 altinda yazilar bulanmaya baslar |
+| `--fps N` | `24` | Hatirlanir. Delta modunda tasiyabileceginizden yuksek tutmak zararsiz |
+| `--quality Q` | `0.8` | Hatirlanir. Delta modunda 0.95'e kadar cikabilir, cunku yalnizca degisen bolgeler gonderilir |
 | `--scale 1\|2` | `1` | 2 = HiDPI; Retina olmayan iPad'de gereksiz yuk |
 | `--position YON` | `right` | `left`/`right`/`above`/`below`; menuden de degistirilir, hatirlanir |
+
+Konum, kalite ve kare hizi **hatirlanir**: ister bayrakla ister `/set` ile
+degistirin, bir sonraki acilista ayni ayarla baslar. Sanal ekran her acilista
+yeniden olusturuldugu icin macOS bunlari kendisi hatirlayamiyor.
 | `--port N` | `8777` | |
 | `--mirror` | kapali | Sanal ekran yerine ana ekrani yansitir |
 
