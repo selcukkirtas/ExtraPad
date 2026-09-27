@@ -271,9 +271,22 @@ final class MJPEGServer {
         let desynced = Atomic(false)
         let finished = Atomic(false)
         // A keyframe is an order of magnitude bigger than a delta, so a client
-        // that falls behind must ask for exactly one - not one per frame, which
-        // would bury the very client that was already struggling.
-        let keyframePending = Atomic(false)
+        // that falls behind must not ask for one per frame - that buries the
+        // very client that was already struggling.
+        //
+        // This is a time throttle rather than a "one pending request" latch,
+        // because a latch deadlocks: if the keyframe it waits for is itself
+        // dropped (the client was still busy when it arrived), the latch never
+        // opens and the client is skipped silently forever.
+        let lastKeyframeRequest = Atomic(Date.distantPast)
+        let sendStartedAt = Atomic(Date.distantPast)
+
+        func requestKeyframeIfDue() {
+            let now = Date()
+            guard now.timeIntervalSince(lastKeyframeRequest.value) > 0.75 else { return }
+            lastKeyframeRequest.store(now)
+            self.onKeyframeRequest?()
+        }
         var subscription: PatchBroadcaster.SubscriberID?
 
         let teardown: () -> Void = { [weak self] in
@@ -303,19 +316,30 @@ final class MJPEGServer {
             // a client that falls behind is skipped until the next keyframe
             // rather than fed a partial update.
             if desynced.value && !group.isKeyframe {
-                if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
+                self.clientLock.lock()
+                self._clients[clientID]?.framesSkipped += 1
+                self.clientLock.unlock()
+                requestKeyframeIfDue()
                 return
             }
-            if inFlight.exchange(true) {
+            if inFlight.value {
+                // A send that never completes means the connection is wedged;
+                // dropping it lets the client reconnect instead of staring at a
+                // frozen picture.
+                if Date().timeIntervalSince(sendStartedAt.value) > 5 {
+                    teardown()
+                    return
+                }
                 desynced.store(true)
                 self.clientLock.lock()
                 self._clients[clientID]?.framesSkipped += 1
                 self.clientLock.unlock()
-                if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
+                requestKeyframeIfDue()
                 return
             }
+            inFlight.store(true)
+            sendStartedAt.store(Date())
             desynced.store(false)
-            if group.isKeyframe { keyframePending.store(false) }
 
             // One write per screen update, however many rectangles it contains.
             var payload = Data()
@@ -346,7 +370,7 @@ final class MJPEGServer {
                             teardown()
                             return
                         case .resync:
-                            if !keyframePending.exchange(true) { self.onKeyframeRequest?() }
+                            requestKeyframeIfDue()
                         case let .input(phase, x, y):
                             self.onInput?(phase, x, y)
                         }

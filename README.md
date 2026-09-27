@@ -196,6 +196,14 @@ Delta modunun tasarimini eski iPad belirledi:
   Onceki hali yeniden baglaniyordu ve bu bir dongu uretiyordu: yeniden baglanmak
   keyframe istiyor, keyframe kuyrugu tasiriyor, tasan kuyruk yeniden
   baglaniyordu.
+- **Keyframe istegi zaman esikli, "bekleyen istek" kilidi degil.** Kilit bir
+  cikmaza giriyor: beklenen keyframe istemciye ulasamazsa (geldigi anda istemci
+  hala mesgulse) kilit hic acilmiyor, istemci sonsuza kadar sessizce atlaniyor
+  ve ekran donuyor. Belirti sinsi: sunucu kare uretmeye devam eder, atlanan
+  sayaci bile artmaz. Simdi istek en fazla 0.75 saniyede bir tekrarlanabiliyor,
+  yani kurtulus her zaman mumkun.
+- **Tamamlanmayan gonderim icin saat var.** Bir gonderim 5 saniyede bitmezse
+  baglanti dusurulur; istemci yeniden baglanir, donmus goruntuye bakmaz.
 - **Geri kalan istemci tek bir keyframe ister, her karede degil.** Keyframe bir
   delta'nin on katidir; her karede istemek, zaten zorlanan istemciyi bogar.
   Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince
