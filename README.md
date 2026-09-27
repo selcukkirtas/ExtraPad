@@ -36,7 +36,8 @@ Izni verdikten sonra uygulamayi bir kez yeniden baslatin.
 
 ## Kullanim
 
-1. Menu cubugundaki ekran simgesine tiklayin, `http://192.168.x.x:8777/` adresini gorun.
+1. Menu cubugundaki ekran simgesine tiklayin; adres anahtariyla birlikte orada
+   yazar (`http://192.168.x.x:8777/?k=...`). Tiklayinca panoya kopyalanir.
 2. iPad'de Safari'yi acip o adrese gidin.
 3. Safari'de **Paylas > Ana Ekrana Ekle** yapin; boylece adres cubugu olmadan tam ekran calisir.
 4. Mac ve iPad **ayni Wi-Fi agında** olmali. 5 GHz bandi gecikmeyi ciddi sekilde dusurur.
@@ -62,6 +63,7 @@ degistirin, bir sonraki acilista ayni ayarla baslar. Sanal ekran her acilista
 yeniden olusturuldugu icin macOS bunlari kendisi hatirlayamiyor.
 | `--port N` | `8777` | |
 | `--no-input` | giris acik | iPad'den dokunma girisini kapatir |
+| `--no-auth` | anahtar acik | Erisim anahtarini kapatir (yalnizca guvendiginiz agda) |
 | `--mirror` | kapali | Sanal ekran yerine ana ekrani yansitir |
 
 Log gormek icin uygulamayi paket icinden dogrudan calistirin:
@@ -208,6 +210,30 @@ Delta modunun tasarimini eski iPad belirledi:
   delta'nin on katidir; her karede istemek, zaten zorlanan istemciyi bogar.
   Olcumde bu hata 145 karede 17 keyframe ve 6.45 Mbit/s uretiyordu; duzeltince
   3 keyframe ve 1.27 Mbit/s'e dustu.
+
+## Erisim anahtari
+
+Port'a ulasabilen herkes ekrani izleyebilir ve - dokunma girisi geldiginden beri
+- fareyi surebilir. Bu yuzden her yol bir anahtarin arkasinda.
+
+Menu cubugundaki adres anahtari icerir:
+`http://192.168.0.x:8777/?k=...`. Sayfa ilk acildiginda sunucu anahtari bir
+cereze cevirir; sonraki istekler - sayfa, akis, WebSocket - o cerezle gecer.
+Anahtar adreste kaldigi icin iPad'in ana ekran kisayolu da calismaya devam eder.
+
+Bu sekli iOS 9 dayatti: Safari'nin o surumunde fetch yok, modern kripto yok ve
+JavaScript bir WebSocket el sikismasina baslik ekleyemiyor. Cerez ise var ve
+tarayici onu ayni kaynakli WebSocket yukseltmelerine kendisi ekliyor.
+
+Menuden **Yeni erisim anahtari uret** ile anahtar degistirilebilir; o an bagli
+cihazlar duser ve kisayollarin yenilenmesi gerekir. Guvendiginiz bir agda
+tamamen kapatmak icin `--no-auth`.
+
+**Bunun ne oldugu konusunda net olalim:** duz HTTP uzerinde, yerel agda paylasilan
+bir sir. Adresi bilen birini durdurur. Ag trafiginizi okuyabilen birini
+durdurmaz, cunku hem anahtar hem ekran goruntusu sifresiz gider. Bunu TLS
+cozerdi, ama iOS 9'da kendinden imzali sertifika kurmanin bedeli bu isin
+getirisinden buyuk.
 
 ## Dokunma girisi
 

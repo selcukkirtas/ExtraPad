@@ -137,18 +137,45 @@ final class MJPEGServer {
             return out
         }()
 
+        // Everything behind the key: the stream shows the screen and the socket
+        // drives the mouse, so neither may be reachable by address alone.
+        var authorised = !config.auth
+        var issueCookie = false
+        if config.auth {
+            if Auth.matches(query[Auth.queryName]) {
+                authorised = true
+                issueCookie = true
+            } else if Auth.matches(Auth.cookieValue(in: requestHead)) {
+                authorised = true
+            }
+        }
+
+        guard authorised else {
+            let body = WebClient.unauthorisedPage()
+            var header = "HTTP/1.1 401 Unauthorized\r\n"
+            header += "Content-Type: text/html; charset=utf-8\r\n"
+            header += "Content-Length: \(body.utf8.count)\r\n"
+            header += "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+            var out = Data(header.utf8)
+            out.append(Data(body.utf8))
+            conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
+            return
+        }
+
         switch path {
         case "/", "/index.html", "/delta":
             // Delta is the default: same quality at roughly a tenth of the
             // bytes and several times the frame rate.
             let html = WebClient.deltaPage(width: config.width, height: config.height)
-            send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
+            send(conn, status: "200 OK", body: Data(html.utf8),
+                 contentType: "text/html; charset=utf-8", setCookie: issueCookie)
 
         case "/mjpeg":
             // Kept as a fallback: it needs no WebSocket, no canvas and no
             // JavaScript in the pixel path, so it works where delta will not.
             let html = WebClient.page(width: config.width, height: config.height, fps: config.fps)
-            send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
+            send(conn, status: "200 OK", body: Data(html.utf8),
+                 contentType: "text/html; charset=utf-8", setCookie: issueCookie)
 
         case "/stream":
             startStream(conn)
@@ -239,11 +266,13 @@ final class MJPEGServer {
         }
     }
 
-    private func send(_ conn: NWConnection, status: String, body: Data, contentType: String) {
+    private func send(_ conn: NWConnection, status: String, body: Data, contentType: String,
+                      setCookie: Bool = false) {
         var header = "HTTP/1.1 \(status)\r\n"
         header += "Content-Type: \(contentType)\r\n"
         header += "Content-Length: \(body.count)\r\n"
         header += "Cache-Control: no-store\r\n"
+        if setCookie { header += Auth.setCookieHeader }
         header += "Connection: close\r\n\r\n"
         var out = Data(header.utf8)
         out.append(body)

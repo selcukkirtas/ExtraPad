@@ -70,7 +70,8 @@ enum WebClient {
 
   function connect() {
     // Cache-buster: Safari will otherwise reuse the dead multipart response.
-    img.src = "/stream?t=" + new Date().getTime();
+    var sep = location.search ? location.search + "&" : "?";
+    img.src = "/stream" + sep + "t=" + new Date().getTime();
   }
 
   img.onload = function () {
@@ -209,7 +210,10 @@ enum WebClient {
 
   function connect() {
     var proto = (location.protocol === "https:") ? "wss://" : "ws://";
-    ws = new WebSocket(proto + location.host + "/ws");
+    // The cookie set when this page loaded is normally enough, but not every
+    // old browser attaches cookies to a WebSocket upgrade - so pass the key
+    // through from the page URL as well when it is there.
+    ws = new WebSocket(proto + location.host + "/ws" + location.search);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = function () {
@@ -322,5 +326,38 @@ enum WebClient {
         return html
             .replacingOccurrences(of: "__W__", with: String(width))
             .replacingOccurrences(of: "__H__", with: String(height))
+    }
+
+    /// Shown when the key is missing or wrong. Deliberately says nothing about
+    /// which - and nothing about the machine it is running on.
+    static func unauthorisedPage() -> String {
+        return #"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ExtraPad</title>
+<style>
+  body { margin: 0; background: #16181c; color: #e8eaed;
+         font: 16px -apple-system, "Helvetica Neue", Helvetica, sans-serif;
+         display: -webkit-box; -webkit-box-pack: center; -webkit-box-align: center;
+         display: flex; align-items: center; justify-content: center;
+         height: 100vh; text-align: center; }
+  .card { max-width: 30em; padding: 2em; }
+  h1 { font-size: 1.25em; margin: 0 0 .6em; }
+  p { color: #9aa0a6; line-height: 1.5; margin: 0; }
+  code { color: #8ec7fb; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Erisim anahtari gerekli</h1>
+    <p>Mac'te menu cubugundaki ExtraPad simgesine tiklayin ve oradaki tam adresi
+       kullanin. Adres <code>?k=...</code> ile biter.</p>
+  </div>
+</body>
+</html>
+"""#
     }
 }

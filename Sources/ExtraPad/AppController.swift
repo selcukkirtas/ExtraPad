@@ -137,7 +137,7 @@ final class AppController: NSObject, NSApplicationDelegate {
          ExtraPad hazir - \(statusLine)
          \(config.width)x\(config.height) @ \(config.fps) fps, kalite \(config.quality)
 
-         iPad'de Safari'yi ac ve su adrese git:
+         iPad'de Safari'yi ac ve su adrese git\(config.auth ? " (anahtar dahil)" : ""):
         \(urls.map { "   \($0)" }.joined(separator: "\n"))
 
          Ipucu: Paylas > Ana Ekrana Ekle ile tam ekran calisir.
@@ -147,9 +147,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func buildURLs() -> [String] {
-        var result = NetworkInfo.localIPv4Addresses().map { "http://\($0):\(config.port)/" }
+        // The key rides in the URL so the iPad's home-screen shortcut keeps
+        // working; the server turns it into a cookie on first load.
+        let suffix = config.auth ? "?\(Auth.queryName)=\(Auth.key)" : ""
+        var result = NetworkInfo.localIPv4Addresses().map { "http://\($0):\(config.port)/\(suffix)" }
         if let host = NetworkInfo.localHostName {
-            result.append("http://\(host):\(config.port)/")
+            result.append("http://\(host):\(config.port)/\(suffix)")
         }
         return result
     }
@@ -281,6 +284,24 @@ final class AppController: NSObject, NSApplicationDelegate {
             menu.addItem(positionItem)
         }
 
+        if config.auth {
+            menu.addItem(.separator())
+            let rotate = NSMenuItem(title: "Yeni erisim anahtari uret",
+                                    action: #selector(rotateKey), keyEquivalent: "")
+            rotate.target = self
+            menu.addItem(rotate)
+            let note = NSMenuItem(title: "(mevcut cihazlarin yeniden baglanmasi gerekir)",
+                                  action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
+        } else {
+            menu.addItem(.separator())
+            let warning = NSMenuItem(title: "UYARI: erisim anahtari kapali",
+                                     action: nil, keyEquivalent: "")
+            warning.isEnabled = false
+            menu.addItem(warning)
+        }
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Cikis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -294,6 +315,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         Config.savedPosition = position
         DisplayArrangement.arrange(displayID, position: position)
         rebuildMenu()
+    }
+
+    @objc private func rotateKey() {
+        Auth.rotate()
+        urls = buildURLs()
+        rebuildMenu()
+        let alert = NSAlert()
+        alert.messageText = "Yeni erisim anahtari uretildi"
+        alert.informativeText = "Bagli cihazlar dustu. Menudeki yeni adresi iPad'de acin ve "
+            + "ana ekran kisayolunu yenileyin - eski kisayol artik calismaz."
+        alert.runModal()
     }
 
     @objc private func copyURL(_ sender: NSMenuItem) {

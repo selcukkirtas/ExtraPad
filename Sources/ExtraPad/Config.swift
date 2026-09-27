@@ -19,6 +19,8 @@ struct Config {
     var mirror = false
     /// Let touches on the iPad drive the Mac's cursor.
     var input = true
+    /// Require the access key. Off only for a network you already trust.
+    var auth = true
     /// Which side of the existing arrangement the iPad sits on. Remembered
     /// between launches, because the virtual display is new every time and
     /// macOS has nothing to remember it by.
@@ -77,6 +79,7 @@ struct Config {
             case "--refresh":  if let v = next(), let r = Double(v) { c.refreshRate = r }
             case "--mirror":   c.mirror = true
             case "--no-input": c.input = false
+            case "--no-auth":  c.auth = false
             case "--position":
                 if let v = next(), let p = DisplayPosition(rawValue: v.lowercased()) {
                     c.position = p
