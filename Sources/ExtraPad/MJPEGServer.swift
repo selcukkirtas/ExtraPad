@@ -8,18 +8,36 @@ final class MJPEGServer {
 
     private static let boundary = "extrapadframe"
 
-    private let config: Config
+    private var config: Config
     private let broadcaster: FrameBroadcaster
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
 
+    /// What the server actually pushed to one client. Tells apart "the stream
+    /// stalled" from "the stream is fine but the browser is not rendering it".
+    struct ClientStats {
+        var address: String
+        var framesSent: Int = 0
+        var bytesSent: Int = 0
+        var framesSkipped: Int = 0     // dropped because the client was still busy
+        var startedAt = Date()
+    }
+
     private let clientLock = NSLock()
-    private var _activeStreams = 0
+    private var _clients: [UInt64: ClientStats] = [:]
 
     var activeStreams: Int {
         clientLock.lock(); defer { clientLock.unlock() }
-        return _activeStreams
+        return _clients.count
     }
+
+    var clientStats: [ClientStats] {
+        clientLock.lock(); defer { clientLock.unlock() }
+        return Array(_clients.values)
+    }
+
+    /// Called when /set asks for new capture settings.
+    var onSettingsChange: ((Double?, Int?) -> Void)?
 
     init(config: Config, broadcaster: FrameBroadcaster) {
         self.config = config
@@ -96,7 +114,17 @@ final class MJPEGServer {
                  contentType: "text/plain; charset=utf-8")
             return
         }
-        let path = String(parts[1].split(separator: "?").first ?? "/")
+        let target = String(parts[1])
+        let path = String(target.split(separator: "?").first ?? "/")
+        let query: [String: String] = {
+            guard let q = target.split(separator: "?").dropFirst().first else { return [:] }
+            var out: [String: String] = [:]
+            for pair in q.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { out[String(kv[0])] = String(kv[1]) }
+            }
+            return out
+        }()
 
         switch path {
         case "/", "/index.html":
@@ -115,13 +143,38 @@ final class MJPEGServer {
             }
 
         case "/info":
+            let clients = clientStats.map { c -> String in
+                let seconds = max(Date().timeIntervalSince(c.startedAt), 0.001)
+                let rate = Double(c.framesSent) / seconds
+                return """
+                {"address":"\(c.address)","framesSent":\(c.framesSent),\
+                "framesSkipped":\(c.framesSkipped),"bytesSent":\(c.bytesSent),\
+                "seconds":\(String(format: "%.1f", seconds)),\
+                "fps":\(String(format: "%.1f", rate))}
+                """
+            }.joined(separator: ",")
             let json = """
             {"width":\(config.width),"height":\(config.height),"scale":\(config.scale),\
             "fps":\(config.fps),"quality":\(config.quality),\
             "framesPublished":\(broadcaster.framesPublished),\
-            "activeStreams":\(activeStreams)}
+            "activeStreams":\(activeStreams),"clients":[\(clients)]}
             """
             send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
+
+        case "/set":
+            let quality = query["quality"].flatMap(Double.init)
+            let fps = query["fps"].flatMap(Int.init)
+            if quality == nil && fps == nil {
+                send(conn, status: "400 Bad Request",
+                     body: Data("quality ve/veya fps verin\n".utf8),
+                     contentType: "text/plain; charset=utf-8")
+            } else {
+                if let quality { config.quality = max(0.1, min(1.0, quality)) }
+                if let fps { config.fps = max(1, min(60, fps)) }
+                onSettingsChange?(quality, fps)
+                let body = "{\"quality\":\(config.quality),\"fps\":\(config.fps)}"
+                send(conn, status: "200 OK", body: Data(body.utf8), contentType: "application/json")
+            }
 
         case "/icon.png":
             // Cached hard on purpose: iOS fetches this once when the user adds
@@ -168,7 +221,16 @@ final class MJPEGServer {
         """
         conn.send(content: Data(header.utf8), completion: .contentProcessed { _ in })
 
-        clientLock.lock(); _activeStreams += 1; clientLock.unlock()
+        let clientID = UInt64(bitPattern: Int64(ObjectIdentifier(conn).hashValue))
+        let address: String
+        if case let .hostPort(host, _) = conn.endpoint {
+            address = "\(host)"
+        } else {
+            address = "bilinmiyor"
+        }
+        clientLock.lock()
+        _clients[clientID] = ClientStats(address: address)
+        clientLock.unlock()
 
         // One frame in flight at a time. If the iPad cannot keep up we skip
         // frames instead of growing an unbounded send queue.
@@ -179,21 +241,31 @@ final class MJPEGServer {
         let teardown: () -> Void = { [weak self] in
             guard let self, !finished.exchange(true) else { return }
             if let subscription { self.broadcaster.unsubscribe(subscription) }
-            self.clientLock.lock(); self._activeStreams -= 1; self.clientLock.unlock()
+            self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
             conn.cancel()
         }
 
-        subscription = broadcaster.subscribe { frame in
-            if finished.value { return }
-            if inFlight.exchange(true) { return }
+        subscription = broadcaster.subscribe { [weak self] frame in
+            guard let self, !finished.value else { return }
+            if inFlight.exchange(true) {
+                self.clientLock.lock()
+                self._clients[clientID]?.framesSkipped += 1
+                self.clientLock.unlock()
+                return
+            }
 
             var part = Data("--\(Self.boundary)\r\nContent-Type: image/jpeg\r\nContent-Length: \(frame.count)\r\n\r\n".utf8)
             part.append(frame)
             part.append(Data("\r\n".utf8))
 
+            let partSize = part.count
             conn.send(content: part, completion: .contentProcessed { error in
                 inFlight.store(false)
-                if error != nil { teardown() }
+                if error != nil { teardown(); return }
+                self.clientLock.lock()
+                self._clients[clientID]?.framesSent += 1
+                self._clients[clientID]?.bytesSent += partSize
+                self.clientLock.unlock()
             })
         }
 

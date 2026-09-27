@@ -24,7 +24,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
 
     let broadcaster = FrameBroadcaster()
 
-    private let config: Config
+    private var config: Config
+    private let configLock = NSLock()
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let sampleQueue = DispatchQueue(label: "dev.extrapad.capture", qos: .userInitiated)
@@ -81,6 +82,37 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = stream
     }
 
+    /// Retunes a running capture. Quality takes effect on the next frame; a new
+    /// frame rate is pushed into the live SCStream, so HTTP clients stay connected
+    /// and nobody has to reload the page mid-measurement.
+    func update(quality: Double?, fps: Int?) async {
+        let snapshot = applySettings(quality: quality, fps: fps)
+
+        guard fps != nil, let stream else { return }
+        let cfg = SCStreamConfiguration()
+        cfg.width = snapshot.width * snapshot.scale
+        cfg.height = snapshot.height * snapshot.scale
+        cfg.pixelFormat = kCVPixelFormatType_32BGRA
+        cfg.colorSpaceName = CGColorSpace.sRGB
+        cfg.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(snapshot.fps))
+        cfg.queueDepth = 3
+        cfg.showsCursor = true
+        try? await stream.updateConfiguration(cfg)
+    }
+
+    /// Synchronous on purpose: NSLock must not be held across an await.
+    private func applySettings(quality: Double?, fps: Int?) -> Config {
+        configLock.lock(); defer { configLock.unlock() }
+        if let quality { config.quality = max(0.1, min(1.0, quality)) }
+        if let fps { config.fps = max(1, min(60, fps)) }
+        return config
+    }
+
+    var currentConfig: Config {
+        configLock.lock(); defer { configLock.unlock() }
+        return config
+    }
+
     func stop() async {
         guard let stream else { return }
         self.stream = nil
@@ -107,12 +139,16 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
             statsLock.lock(); encoding = false; statsLock.unlock()
         }
 
+        configLock.lock()
+        let quality = config.quality
+        configLock.unlock()
+
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         guard let jpeg = ciContext.jpegRepresentation(
             of: image,
             colorSpace: colorSpace,
             options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption:
-                        config.quality]
+                        quality]
         ) else { return }
 
         broadcaster.publish(jpeg)

@@ -67,7 +67,10 @@ Log gormek icin uygulamayi paket icinden dogrudan calistirin:
 - `/` - iPad istemcisi
 - `/stream` - MJPEG akisi
 - `/snapshot` - tek kare JPEG (test icin: `curl -o t.jpg http://localhost:8777/snapshot`)
-- `/info` - JSON durum (kare sayisi, bagli cihaz sayisi)
+- `/info` - JSON durum: uretilen kare, istemci basina **gonderilen/atlanan kare**,
+  bayt ve gerceklesen fps. Darbogaz teshisi icin asil arac budur.
+- `/set?quality=0.3&fps=12` - yayin ayarlarini **calisirken** degistirir; istemciler
+  bagli kalir, sayfayi yenilemek gerekmez
 
 ## Bant genisligi
 
@@ -83,6 +86,26 @@ gondermez.
 
 **2.4 GHz Wi-Fi kullaniyorsaniz** varsayilan ayar sinirda kalir; `--fps 12
 --quality 0.45` ile baslayin. 5 GHz'de varsayilan rahat calisir.
+
+### Gercek bir baglantida olculen tavan (iPad 2, A1395)
+
+`/info` ile iPad'e *gercekten* giden kareler sayilarak:
+
+| Ayar | iPad'in aldigi | Kare | Aktarim |
+|---|---|---|---|
+| kalite 0.6, 24 fps | 4.8 fps | 158 KB | 6.8 Mbit/s |
+| kalite 0.3, 24 fps | 11.8 fps | 87 KB | 8.2 Mbit/s |
+| kalite 0.15, 24 fps | 15.6 fps | 63 KB | 7.9 Mbit/s |
+| kalite 0.5, 12 fps | 7.2 fps | 129 KB | 7.6 Mbit/s |
+| **kalite 0.3, 12 fps** | **12.0 fps** | **81 KB** | **7.9 Mbit/s** |
+
+Hangi ayar denenirse denensin aktarim **7.6-8.2 Mbit/s**'te tavan yapiyor. Yani
+darbogaz iPad'in islemcisi degil, baglantinin kendisi: kareyi kucultmek dogrudan
+fps'e ceviriliyor. Islemci darbogazi olsaydi kaliteyi dusurmek fps'i bu kadar
+degistirmezdi, cunku JPEG cozme maliyeti agirlikli olarak cozunurluge baglidir.
+
+Bu tavanin altinda en verimli nokta `--quality 0.3 --fps 12`: uretilen her kare
+iPad'e ulasiyor, hic kare atilmiyor.
 
 ## Bilinen sinirlar
 

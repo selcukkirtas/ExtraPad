@@ -78,6 +78,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         self.streamer = streamer
 
         let server = MJPEGServer(config: config, broadcaster: streamer.broadcaster)
+        server.onSettingsChange = { [weak streamer] quality, fps in
+            Task { await streamer?.update(quality: quality, fps: fps) }
+        }
         do {
             try server.start()
             self.server = server
