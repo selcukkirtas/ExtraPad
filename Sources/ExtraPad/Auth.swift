@@ -31,7 +31,7 @@ enum Auth {
             return stored
         }
         let fresh = generate()
-        UserDefaults.standard.set(fresh, forKey: defaultsKey)
+        store(fresh, forKey: defaultsKey)
         return fresh
     }
 
@@ -49,14 +49,22 @@ enum Auth {
             return stored
         }
         let fresh = generateCode()
-        UserDefaults.standard.set(fresh, forKey: codeKey)
+        store(fresh, forKey: codeKey)
         return fresh
+    }
+
+    /// Written through immediately. UserDefaults flushes lazily, and quitting
+    /// the app soon after first launch was losing the freshly generated code -
+    /// so the code shown in the menu changed by itself on the next start.
+    private static func store(_ value: String, forKey key: String) {
+        UserDefaults.standard.set(value, forKey: key)
+        UserDefaults.standard.synchronize()
     }
 
     @discardableResult
     static func rotateCode() -> String {
         let fresh = generateCode()
-        UserDefaults.standard.set(fresh, forKey: codeKey)
+        store(fresh, forKey: codeKey)
         lock.lock(); failures = 0; lock.unlock()
         return fresh
     }
@@ -89,7 +97,7 @@ enum Auth {
     @discardableResult
     static func rotate() -> String {
         let fresh = generate()
-        UserDefaults.standard.set(fresh, forKey: defaultsKey)
+        store(fresh, forKey: defaultsKey)
         rotateCode()
         return fresh
     }

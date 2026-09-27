@@ -74,6 +74,24 @@ final class DeviceRegistry {
         return .pending
     }
 
+    /// Approves without asking. Used when the client just proved it knows the
+    /// pairing code: the secret has been checked, so making the owner confirm
+    /// the same thing again is friction, not security. The prompt stays for the
+    /// case it was meant for - a device that turned up already holding a cookie.
+    func approveOnSecret(id: String, address: String) {
+        lock.lock()
+        let existing = approved[id]
+        pending.remove(id)
+        denied.remove(id)
+        approved[id] = Device(id: id, address: address,
+                              firstSeen: existing?.firstSeen ?? Date(), lastSeen: Date())
+        let snapshot = approved
+        let deniedSnapshot = denied
+        lock.unlock()
+        Self.save(snapshot, key: Self.approvedKey)
+        UserDefaults.standard.set(Array(deniedSnapshot), forKey: Self.deniedKey)
+    }
+
     func approve(_ device: Device) {
         lock.lock()
         pending.remove(device.id)

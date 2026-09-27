@@ -187,6 +187,12 @@ final class MJPEGServer {
             let address: String
             if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "bilinmiyor" }
 
+            // `issueCookie` means this request carried the pairing code or the
+            // key - the secret was just verified, so let the device in.
+            if issueCookie {
+                devices.approveOnSecret(id: deviceID, address: address)
+            }
+
             switch devices.status(of: deviceID, address: address) {
             case .approved:
                 break
