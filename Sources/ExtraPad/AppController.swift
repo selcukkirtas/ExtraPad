@@ -54,7 +54,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             if let display, display.displayID != 0 {
                 virtualDisplay = display
                 captureID = display.displayID
-                statusLine = "sanal ekran aktif"
+                // macOS attaches new displays as mirrors; without this the iPad
+                // would show a squashed copy of the built-in screen.
+                DisplayArrangement.makeExtended(display.displayID)
+                if DisplayArrangement.isMirroring(display.displayID) {
+                    statusLine = "sanal ekran yansitma modunda - Ayarlar > Ekranlar'dan 'Genislet' secin"
+                    log("[ExtraPad] UYARI: \(statusLine)")
+                } else {
+                    statusLine = "sanal ekran aktif"
+                }
             } else {
                 config.mirror = true
                 statusLine = "sanal ekran acilamadi, yansitmaya dusuldu"
