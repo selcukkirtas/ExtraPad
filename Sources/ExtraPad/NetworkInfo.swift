@@ -31,4 +31,15 @@ enum NetworkInfo {
         let name = ProcessInfo.processInfo.hostName
         return name.isEmpty ? nil : name
     }
+
+    /// What the iPad shows in its list of nearby Macs. Bonjour service names
+    /// are what a person reads, so the trailing ".local." and any host-name
+    /// dashes are cleaned up rather than shown raw.
+    static var friendlyHostName: String {
+        if let name = Host.current().localizedName, !name.isEmpty { return name }
+        var name = ProcessInfo.processInfo.hostName
+        if name.hasSuffix(".local") { name = String(name.dropLast(6)) }
+        if name.hasSuffix(".") { name = String(name.dropLast()) }
+        return name.isEmpty ? "Mac" : name
+    }
 }

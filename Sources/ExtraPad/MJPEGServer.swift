@@ -77,7 +77,22 @@ final class MJPEGServer {
         }
 
         let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: config.port)!)
-        listener.service = NWListener.Service(name: "ExtraPad", type: "_http._tcp")
+
+        // A dedicated service type rather than the generic _http._tcp: the iPad
+        // app browses for exactly this, and the TXT record carries what it needs
+        // to render a useful list before connecting to anything - which Mac,
+        // what it speaks, whether a code will be asked for.
+        var txt = NWTXTRecord()
+        txt["v"] = String(ExtraPadProtocol.version)
+        txt["min"] = String(ExtraPadProtocol.minimumSupportedVersion)
+        txt["auth"] = config.auth ? "1" : "0"
+        txt["input"] = config.input ? "1" : "0"
+        txt["size"] = "\(config.width)x\(config.height)"
+        txt["host"] = NetworkInfo.friendlyHostName
+
+        listener.service = NWListener.Service(name: NetworkInfo.friendlyHostName,
+                                              type: "_extrapad._tcp",
+                                              txtRecord: txt)
         listener.newConnectionHandler = { [weak self] conn in
             self?.accept(conn)
         }
