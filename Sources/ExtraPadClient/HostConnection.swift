@@ -32,6 +32,10 @@ final class HostConnection: ObservableObject {
     private let session: URLSession
     private var socket: URLSessionWebSocketTask?
     private let canvas = ScreenCanvas(size: CGSize(width: 1024, height: 768))
+    private let video = VideoDecoder()
+    /// Which format this connection settled on. The host serves both, so this
+    /// is decided by what it agreed to rather than assumed.
+    private var negotiatedVersion = WireProtocol.atlas
 
     private var frameCount = 0
     private var byteCount = 0
@@ -39,6 +43,7 @@ final class HostConnection: ObservableObject {
 
     private var reconnectAttempt = 0
     private var wantsConnection = false
+    private var hostProtocolVersion = WireProtocol.atlas
 
     init(baseURL: URL, hostID: String) {
         self.baseURL = baseURL
@@ -48,6 +53,17 @@ final class HostConnection: ObservableObject {
         configuration.httpShouldSetCookies = true
         self.session = URLSession(configuration: configuration)
         restoreSavedPairing()
+
+        video.onFrame = { [weak self] frame in
+            Task { @MainActor in self?.present(frame) }
+        }
+    }
+
+    @MainActor
+    private func present(_ frame: CGImage) {
+        image = frame
+        frameCount += 1
+        updateRates()
     }
 
     /// A previous pairing is replayed into the session's cookie jar, so a
@@ -142,7 +158,9 @@ final class HostConnection: ObservableObject {
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let hostVersion = json["protocol"] as? Int else { return false }
-            return WireProtocol.canServe(hostVersion)
+            guard WireProtocol.canServe(hostVersion) else { return false }
+            hostProtocolVersion = min(hostVersion, WireProtocol.version)
+            return true
         } catch {
             return false
         }
@@ -152,8 +170,11 @@ final class HostConnection: ObservableObject {
         var components = URLComponents(url: baseURL.appendingPathComponent("ws"),
                                        resolvingAgainstBaseURL: false)
         components?.scheme = "ws"
+        // Ask for the best the host offers; it refuses anything it cannot
+        // serve, so this cannot silently produce an unreadable stream.
+        negotiatedVersion = hostProtocolVersion
         components?.queryItems = [URLQueryItem(name: WireNames.versionQuery,
-                                               value: String(WireProtocol.version))]
+                                               value: String(negotiatedVersion))]
         guard let url = components?.url else {
             state = .failed("Could not build the stream address.")
             return
@@ -185,19 +206,32 @@ final class HostConnection: ObservableObject {
 
     private func handle(_ data: Data) {
         byteCount += data.count
+
+        if negotiatedVersion >= WireProtocol.video {
+            guard let message = VideoMessage.decode(data) else { return }
+            // Frames arrive from the decoder's callback, so the rate is counted
+            // there rather than here.
+            video.handle(message)
+            updateRates()
+            return
+        }
+
         guard let message = AtlasMessage.decode(data) else { return }
         if let picture = canvas.apply(message) {
             image = picture
             frameCount += 1
         }
+        updateRates()
+    }
+
+    private func updateRates() {
         let elapsed = Date().timeIntervalSince(windowStart)
-        if elapsed >= 1 {
-            framesPerSecond = Double(frameCount) / elapsed
-            megabitsPerSecond = Double(byteCount) * 8 / elapsed / 1_000_000
-            frameCount = 0
-            byteCount = 0
-            windowStart = Date()
-        }
+        guard elapsed >= 1 else { return }
+        framesPerSecond = Double(frameCount) / elapsed
+        megabitsPerSecond = Double(byteCount) * 8 / elapsed / 1_000_000
+        frameCount = 0
+        byteCount = 0
+        windowStart = Date()
     }
 
     /// Wi-Fi drops, the Mac sleeps, the app is backgrounded. None of those
@@ -234,5 +268,12 @@ final class HostConnection: ObservableObject {
         socket?.send(.string("\(phase) \(x) \(y)")) { _ in }
     }
 
-    var displaySize: CGSize { canvas.size }
+    /// Where touches are mapped to. With video the frame itself is the
+    /// authority, since the host's resolution arrives in the parameter sets.
+    var displaySize: CGSize {
+        if negotiatedVersion >= WireProtocol.video, let image {
+            return CGSize(width: image.width, height: image.height)
+        }
+        return canvas.size
+    }
 }
