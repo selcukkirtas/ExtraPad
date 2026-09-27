@@ -101,6 +101,16 @@ you.
 
 Run the binary inside the bundle directly to see logs.
 
+### Tests
+
+```bash
+./scripts/test.sh
+```
+
+The wrapper forces the build directory outside the project. If the repo sits in
+iCloud Drive, signing the test bundle fails there for the same reason the app
+bundle is built elsewhere.
+
 ### Endpoints
 
 - `/` - the iPad client (delta mode)
@@ -247,7 +257,7 @@ screen costing nothing at all.
 | `Sources/ExtraPad/AppController.swift` | Menu bar app, pipeline setup, permission flows |
 | `Sources/ExtraPad/ScreenStreamer.swift` | ScreenCaptureKit capture and JPEG encoding |
 | `Sources/ExtraPad/DeltaEncoder.swift` | Tile diffing, rectangle merging, atlas packing, progressive refresh |
-| `Sources/ExtraPad/WebSocket.swift` | Handshake, framing, wire format |
+| `Sources/ExtraPadProtocol/` | Everything both sides of the wire need and nothing platform specific: version, wire format with encoder *and* decoder, WebSocket framing. The future iOS client depends on exactly this target |
 | `Sources/ExtraPad/MJPEGServer.swift` | Hand-written HTTP/1.1 server, routing, access control |
 | `Sources/ExtraPad/Auth.swift` | Access key, pairing code, cookies |
 | `Sources/ExtraPad/DeviceRegistry.swift` | Per-device approval |

@@ -1,19 +1,13 @@
 import CryptoKit
 import Foundation
 
-/// Just enough of RFC 6455 to push binary messages at a browser: the handshake,
-/// server-to-client framing, and recognising a close from the client.
-///
-/// Hand-written for the same reason as the HTTP server - one direction, one
-/// message type, no dependency worth adding. Note that server frames are never
-/// masked, which removes the fiddliest half of the spec.
-enum WebSocket {
+public enum WebSocket {
 
-    static let guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    public static let guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
     /// Builds the 101 response for a client handshake, or nil if the request is
     /// not a valid WebSocket upgrade.
-    static func handshakeResponse(requestHead: String) -> Data? {
+    public static func handshakeResponse(requestHead: String) -> Data? {
         var key: String?
         var isUpgrade = false
         for line in requestHead.split(separator: "\r\n") {
@@ -40,7 +34,7 @@ enum WebSocket {
     }
 
     /// Wraps a payload in a single unmasked binary frame.
-    static func binaryFrame(_ payload: Data) -> Data {
+    public static func binaryFrame(_ payload: Data) -> Data {
         var frame = Data([0x82])          // FIN + opcode 0x2 (binary)
         let count = payload.count
         if count < 126 {
@@ -59,7 +53,7 @@ enum WebSocket {
         return frame
     }
 
-    enum ClientMessage {
+    public enum ClientMessage {
         case close
         /// "my canvas is wrong, send a full frame"
         case resync
@@ -72,12 +66,14 @@ enum WebSocket {
     /// Client frames are masked, and a message can straddle two reads, so this
     /// has to buffer properly rather than peek at the first byte - which was
     /// enough while the only thing the browser ever sent was "resync".
-    struct ClientFrameReader {
+    public struct ClientFrameReader {
+        public init() {}
+
         private var buffer = Data()
 
-        mutating func append(_ data: Data) { buffer.append(data) }
+        public mutating func append(_ data: Data) { buffer.append(data) }
 
-        mutating func next() -> ClientMessage? {
+        public mutating func next() -> ClientMessage? {
             while true {
                 guard buffer.count >= 2 else { return nil }
                 let bytes = [UInt8](buffer)
@@ -126,82 +122,5 @@ enum WebSocket {
                   let x = Int(parts[1]), let y = Int(parts[2]) else { return nil }
             return .input(phase: String(parts[0]), x: x, y: y)
         }
-    }
-}
-
-extension WebSocket {
-    /// Atlas wire format, all big-endian so the browser can read it with
-    /// DataView's defaults:
-    ///
-    ///     u8  flags          bit 0 = keyframe, bit 1 = show the diagnostic strip
-    ///     u8  regionCount
-    ///     regionCount x { u16 sourceY, u16 destX, u16 destY, u16 width, u16 height }
-    ///     ... JPEG bytes ...
-    ///
-    /// One image per frame, however many rectangles it carries: the client
-    /// decodes once and then blits each region out of it.
-    static func atlasPayload(regions: [(sourceY: Int, destX: Int, destY: Int, width: Int, height: Int)],
-                             isKeyframe: Bool, showHUD: Bool = false, jpeg: Data) -> Data {
-        var data = Data(capacity: 2 + regions.count * 10 + jpeg.count)
-        // Riding along on the existing flags byte keeps the HUD toggle live
-        // without a reload and without a second message type.
-        data.append((isKeyframe ? 1 : 0) | (showHUD ? 2 : 0))
-        data.append(UInt8(clamping: regions.count))
-        for region in regions {
-            for value in [region.sourceY, region.destX, region.destY,
-                          region.width, region.height].map({ UInt16(clamping: $0) }) {
-                data.append(UInt8(value >> 8))
-                data.append(UInt8(value & 0xFF))
-            }
-        }
-        data.append(jpeg)
-        return data
-    }
-}
-
-/// One screen update: the rectangles that changed, already framed for the wire.
-struct PatchGroup {
-    var messages: [Data]
-    var isKeyframe: Bool
-}
-
-/// Fan-out for delta patches.
-///
-/// Unlike full frames, patches must not be silently dropped: a client that
-/// misses one keeps a stale rectangle on screen until the next keyframe. So a
-/// client that cannot keep up is marked desynchronised and skipped entirely
-/// until a keyframe arrives, rather than being fed a partial update.
-final class PatchBroadcaster {
-    typealias SubscriberID = UInt64
-
-    private let lock = NSLock()
-    private var subscribers: [SubscriberID: (PatchGroup) -> Void] = [:]
-    private var nextID: SubscriberID = 1
-
-    private(set) var groupsPublished: UInt64 = 0
-
-    var subscriberCount: Int {
-        lock.lock(); defer { lock.unlock() }
-        return subscribers.count
-    }
-
-    func subscribe(_ handler: @escaping (PatchGroup) -> Void) -> SubscriberID {
-        lock.lock(); defer { lock.unlock() }
-        let id = nextID
-        nextID += 1
-        subscribers[id] = handler
-        return id
-    }
-
-    func unsubscribe(_ id: SubscriberID) {
-        lock.lock(); subscribers.removeValue(forKey: id); lock.unlock()
-    }
-
-    func publish(_ group: PatchGroup) {
-        lock.lock()
-        groupsPublished += 1
-        let sinks = Array(subscribers.values)
-        lock.unlock()
-        for sink in sinks { sink(group) }
     }
 }

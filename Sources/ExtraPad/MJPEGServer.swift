@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import ExtraPadProtocol
 
 /// Minimal HTTP/1.1 server serving the client page and an
 /// `multipart/x-mixed-replace` JPEG stream. Hand-rolled rather than pulled from
@@ -83,15 +84,15 @@ final class MJPEGServer {
         // to render a useful list before connecting to anything - which Mac,
         // what it speaks, whether a code will be asked for.
         var txt = NWTXTRecord()
-        txt["v"] = String(ExtraPadProtocol.version)
-        txt["min"] = String(ExtraPadProtocol.minimumSupportedVersion)
+        txt["v"] = String(WireProtocol.version)
+        txt["min"] = String(WireProtocol.minimumSupportedVersion)
         txt["auth"] = config.auth ? "1" : "0"
         txt["input"] = config.input ? "1" : "0"
         txt["size"] = "\(config.width)x\(config.height)"
         txt["host"] = NetworkInfo.friendlyHostName
 
         listener.service = NWListener.Service(name: NetworkInfo.friendlyHostName,
-                                              type: "_extrapad._tcp",
+                                              type: WireNames.bonjourServiceType,
                                               txtRecord: txt)
         listener.newConnectionHandler = { [weak self] conn in
             self?.accept(conn)
@@ -256,18 +257,18 @@ final class MJPEGServer {
 
         case "/version":
             let json = """
-            {"protocol":\(ExtraPadProtocol.version),\
-            "minimum":\(ExtraPadProtocol.minimumSupportedVersion)}
+            {"protocol":\(WireProtocol.version),\
+            "minimum":\(WireProtocol.minimumSupportedVersion)}
             """
             send(conn, status: "200 OK", body: Data(json.utf8), contentType: "application/json")
 
         case "/ws":
             // A client that names a version we cannot serve is refused clearly
             // rather than being left to misparse the stream.
-            if let raw = query["v"], let clientVersion = Int(raw),
-               !ExtraPadProtocol.canServe(clientVersion) {
+            if let raw = query[WireNames.versionQuery], let clientVersion = Int(raw),
+               !WireProtocol.canServe(clientVersion) {
                 send(conn, status: "409 Conflict",
-                     body: Data("Protocol \(clientVersion) not supported; host speaks \(ExtraPadProtocol.version)\n".utf8),
+                     body: Data("Protocol \(clientVersion) not supported; host speaks \(WireProtocol.version)\n".utf8),
                      contentType: "text/plain; charset=utf-8")
                 return
             }
@@ -428,11 +429,11 @@ final class MJPEGServer {
         // frames to build a keyframe from - so prime it with the last full
         // frame we already have, then ask for a fresh one.
         if let latest = broadcaster.latestFrame {
-            let payload = WebSocket.atlasPayload(
-                regions: [(sourceY: 0, destX: 0, destY: 0,
-                           width: config.width * config.scale,
-                           height: config.height * config.scale)],
-                isKeyframe: true, showHUD: config.hud, jpeg: latest)
+            let payload = AtlasMessage(
+                regions: [AtlasMessage.Region(sourceY: 0, destX: 0, destY: 0,
+                                              width: config.width * config.scale,
+                                              height: config.height * config.scale)],
+                isKeyframe: true, showsDiagnostics: config.hud, jpeg: latest).encoded()
             conn.send(content: WebSocket.binaryFrame(payload), completion: .contentProcessed { _ in })
         }
         onKeyframeRequest?()

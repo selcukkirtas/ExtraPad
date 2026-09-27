@@ -1,4 +1,5 @@
 import Foundation
+import ExtraPadProtocol
 
 /// Shared-secret access control for the local network.
 ///
@@ -21,8 +22,8 @@ enum Auth {
 
     private static let defaultsKey = "ExtraPadAccessKey"
     private static let codeKey = "ExtraPadPairingCode"
-    static let cookieName = "extrapad"
-    static let queryName = "k"
+    static let cookieName = WireNames.accessCookie
+    static let queryName = WireNames.keyQuery
 
     /// Stable across launches on purpose: the iPad's home-screen shortcut has
     /// the key baked into its URL, and rotating on every start would break it.
@@ -127,7 +128,7 @@ enum Auth {
         return difference == 0
     }
 
-    static let deviceCookieName = "extrapad_device"
+    static let deviceCookieName = WireNames.deviceCookie
 
     static func deviceCookieHeader(_ id: String) -> String {
         "Set-Cookie: \(deviceCookieName)=\(id); Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax\r\n"

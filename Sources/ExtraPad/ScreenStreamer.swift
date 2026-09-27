@@ -2,6 +2,7 @@ import Foundation
 import CoreImage
 import CoreMedia
 import ScreenCaptureKit
+import ExtraPadProtocol
 
 /// Captures one display with ScreenCaptureKit and turns each frame into a JPEG.
 /// JPEG rather than H.264 because Safari on iOS 9-11 has neither Media Source
@@ -152,14 +153,15 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         let wantsPatches = patchBroadcaster.subscriberCount > 0
         if wantsPatches {
             if let atlas = deltaEncoder.encode(pixelBuffer, quality: quality) {
-                let payload = WebSocket.atlasPayload(
+                let payload = AtlasMessage(
                     regions: atlas.regions.map {
-                        (sourceY: $0.sourceY, destX: Int($0.dest.x), destY: Int($0.dest.y),
-                         width: Int($0.size.width), height: Int($0.size.height))
+                        AtlasMessage.Region(sourceY: $0.sourceY,
+                                            destX: Int($0.dest.x), destY: Int($0.dest.y),
+                                            width: Int($0.size.width), height: Int($0.size.height))
                     },
                     isKeyframe: atlas.isKeyframe,
-                    showHUD: showHUD,
-                    jpeg: atlas.jpeg)
+                    showsDiagnostics: showHUD,
+                    jpeg: atlas.jpeg).encoded()
                 patchBroadcaster.publish(PatchGroup(messages: [payload],
                                                     isKeyframe: atlas.isKeyframe))
             }

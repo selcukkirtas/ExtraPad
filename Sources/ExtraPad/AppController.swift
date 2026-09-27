@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import VirtualDisplayBridge
+import ExtraPadProtocol
 
 /// Owns the whole pipeline: virtual display -> ScreenCaptureKit -> JPEG -> HTTP.
 @MainActor
