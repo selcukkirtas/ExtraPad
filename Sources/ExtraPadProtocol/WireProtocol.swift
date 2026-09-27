@@ -12,16 +12,21 @@ import Foundation
 /// on its own schedule and will routinely be older or newer than the host.
 public enum WireProtocol {
 
-    /// Bump on any change to the wire format that an older client cannot read:
-    /// message layout, header size, flag meanings.
-    ///
-    /// 1 - JPEG atlas: 2-byte header plus 10 bytes per region, regions blitted
-    ///     out of one image per frame.
-    public static let version = 1
+    /// Version 1 - JPEG atlas. Changed rectangles packed into one image per
+    /// frame. The only thing Safari on iOS 9 can decode, so the web client is
+    /// permanently on this.
+    public static let atlas = 1
 
-    /// Lowest version this host can still serve. Kept equal to `version` until
-    /// there is a second format to support.
-    public static let minimumSupportedVersion = 1
+    /// Version 2 - H.264. Inter-frame prediction done properly by a hardware
+    /// codec instead of by hand with tile diffing, which needs a native client.
+    public static let video = 2
+
+    /// What a client gets if it asks for the best on offer.
+    public static let version = video
+
+    /// Oldest version still served. The web client depends on this staying at
+    /// `atlas`: it cannot be upgraded, because the browser it runs in cannot.
+    public static let minimumSupportedVersion = atlas
 
     public static func canServe(_ clientVersion: Int) -> Bool {
         clientVersion >= minimumSupportedVersion && clientVersion <= version

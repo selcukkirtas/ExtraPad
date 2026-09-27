@@ -25,10 +25,21 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
 
     let broadcaster = FrameBroadcaster()
     let patchBroadcaster = PatchBroadcaster()
+    /// Protocol 2 clients. Kept separate from the atlas stream because the two
+    /// carry completely different payloads and a host commonly serves both at
+    /// once - an old iPad on the web client and a new one on the native app.
+    let videoBroadcaster = PatchBroadcaster()
 
     private var config: Config
     private let configLock = NSLock()
     private let deltaEncoder = DeltaEncoder()
+    private lazy var videoEncoder: VideoEncoder = {
+        let encoder = VideoEncoder(fps: config.fps)
+        encoder.onMessage = { [weak self] message in
+            self?.videoBroadcaster.publish(PatchGroup(messages: [message], isKeyframe: false))
+        }
+        return encoder
+    }()
     private let hudLock = NSLock()
     private var _showHUD = false
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -148,8 +159,13 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         let quality = config.quality
         configLock.unlock()
 
-        // Delta clients and full-frame clients need different work, so only do
-        // the encoding somebody is actually waiting for.
+        // Three possible outputs and usually only one audience, so only do the
+        // encoding somebody is actually waiting for.
+        if videoBroadcaster.subscriberCount > 0 {
+            videoEncoder.encode(pixelBuffer,
+                                presentationTime: sampleBuffer.presentationTimeStamp)
+        }
+
         let wantsPatches = patchBroadcaster.subscriberCount > 0
         if wantsPatches {
             if let atlas = deltaEncoder.encode(pixelBuffer, quality: quality) {
@@ -167,7 +183,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
             }
         }
 
-        guard broadcaster.subscriberCount > 0 || !wantsPatches else { return }
+        guard broadcaster.subscriberCount > 0
+                || (!wantsPatches && videoBroadcaster.subscriberCount == 0) else { return }
 
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         guard let jpeg = ciContext.jpegRepresentation(
@@ -183,6 +200,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Asks for a full frame on the next capture - used when a client joins and
     /// has no earlier pixels to patch onto.
     func requestKeyframe() { deltaEncoder.requestKeyframe() }
+    func requestVideoKeyframe() { videoEncoder.requestKeyframe() }
+    var videoParameterSets: Data? { videoEncoder.parameterSetMessage }
 
     var showHUD: Bool {
         get { hudLock.lock(); defer { hudLock.unlock() }; return _showHUD }

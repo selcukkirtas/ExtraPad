@@ -12,6 +12,7 @@ final class MJPEGServer {
     private var config: Config
     private let broadcaster: FrameBroadcaster
     private let patchBroadcaster: PatchBroadcaster
+    private let videoBroadcaster: PatchBroadcaster
     let devices = DeviceRegistry()
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
@@ -63,10 +64,17 @@ final class MJPEGServer {
     var deltaStatsProvider: (() -> DeltaEncoder.Stats)?
     var resetDeltaStats: (() -> Void)?
 
-    init(config: Config, broadcaster: FrameBroadcaster, patchBroadcaster: PatchBroadcaster) {
+    /// Called when a protocol 2 client needs an IDR, and to fetch the current
+    /// parameter sets for one that has just connected.
+    var onVideoKeyframeRequest: (() -> Void)?
+    var videoParameterSets: (() -> Data?)?
+
+    init(config: Config, broadcaster: FrameBroadcaster,
+         patchBroadcaster: PatchBroadcaster, videoBroadcaster: PatchBroadcaster) {
         self.config = config
         self.broadcaster = broadcaster
         self.patchBroadcaster = patchBroadcaster
+        self.videoBroadcaster = videoBroadcaster
     }
 
     func start() throws {
@@ -272,7 +280,8 @@ final class MJPEGServer {
                      contentType: "text/plain; charset=utf-8")
                 return
             }
-            startWebSocket(conn, requestHead: requestHead)
+            let requested = query[WireNames.versionQuery].flatMap(Int.init) ?? WireProtocol.atlas
+            startWebSocket(conn, requestHead: requestHead, protocolVersion: requested)
 
         case "/snapshot":
             if let frame = broadcaster.latestFrame {
@@ -381,7 +390,8 @@ final class MJPEGServer {
 
     // MARK: - WebSocket delta stream
 
-    private func startWebSocket(_ conn: NWConnection, requestHead: String) {
+    private func startWebSocket(_ conn: NWConnection, requestHead: String,
+                                protocolVersion: Int = WireProtocol.atlas) {
         guard let handshake = WebSocket.handshakeResponse(requestHead: requestHead) else {
             send(conn, status: "400 Bad Request", body: Data("WebSocket upgrade expected\n".utf8),
                  contentType: "text/plain; charset=utf-8")
@@ -389,11 +399,18 @@ final class MJPEGServer {
         }
         conn.send(content: handshake, completion: .contentProcessed { _ in })
 
+        // Which stream this client gets is settled once, here: a host commonly
+        // serves both at the same time - an old iPad on the web client and a
+        // new one on the native app.
+        let usesVideo = protocolVersion >= WireProtocol.video
+        let broadcaster = usesVideo ? videoBroadcaster : patchBroadcaster
+        let requestKeyframe = usesVideo ? onVideoKeyframeRequest : onKeyframeRequest
+
         let clientID = UInt64(bitPattern: Int64(ObjectIdentifier(conn).hashValue))
         let address: String
         if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "unknown" }
         clientLock.lock()
-        _clients[clientID] = ClientStats(address: address + " (delta)")
+        _clients[clientID] = ClientStats(address: address + (usesVideo ? " (h264)" : " (delta)"))
         clientLock.unlock()
 
         let inFlight = Atomic(false)
@@ -414,21 +431,27 @@ final class MJPEGServer {
             let now = Date()
             guard now.timeIntervalSince(lastKeyframeRequest.value) > 0.75 else { return }
             lastKeyframeRequest.store(now)
-            self.onKeyframeRequest?()
+            requestKeyframe?()
         }
         var subscription: PatchBroadcaster.SubscriberID?
 
         let teardown: () -> Void = { [weak self] in
             guard let self, !finished.exchange(true) else { return }
-            if let subscription { self.patchBroadcaster.unsubscribe(subscription) }
+            if let subscription { broadcaster.unsubscribe(subscription) }
             self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
             conn.cancel()
         }
 
-        // The client's canvas is blank, and an idle screen produces no new
-        // frames to build a keyframe from - so prime it with the last full
+        // A decoder cannot start without SPS/PPS, and an idle screen produces
+        // no new frames to carry them.
+        if usesVideo, let sets = videoParameterSets?() {
+            conn.send(content: WebSocket.binaryFrame(sets), completion: .contentProcessed { _ in })
+        }
+
+        // The atlas client's canvas is blank, and an idle screen produces no
+        // new frames to build a keyframe from - so prime it with the last full
         // frame we already have, then ask for a fresh one.
-        if let latest = broadcaster.latestFrame {
+        if !usesVideo, let latest = self.broadcaster.latestFrame {
             let payload = AtlasMessage(
                 regions: [AtlasMessage.Region(sourceY: 0, destX: 0, destY: 0,
                                               width: config.width * config.scale,
@@ -436,9 +459,9 @@ final class MJPEGServer {
                 isKeyframe: true, showsDiagnostics: config.hud, jpeg: latest).encoded()
             conn.send(content: WebSocket.binaryFrame(payload), completion: .contentProcessed { _ in })
         }
-        onKeyframeRequest?()
+        requestKeyframe?()
 
-        subscription = patchBroadcaster.subscribe { [weak self] group in
+        subscription = broadcaster.subscribe { [weak self] group in
             guard let self, !finished.value else { return }
 
             // A missed patch leaves a stale rectangle on the canvas forever, so

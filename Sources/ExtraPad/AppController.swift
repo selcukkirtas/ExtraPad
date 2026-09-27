@@ -88,7 +88,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
         let server = MJPEGServer(config: config,
                                  broadcaster: streamer.broadcaster,
-                                 patchBroadcaster: streamer.patchBroadcaster)
+                                 patchBroadcaster: streamer.patchBroadcaster,
+                                 videoBroadcaster: streamer.videoBroadcaster)
+        server.onVideoKeyframeRequest = { [weak streamer] in streamer?.requestVideoKeyframe() }
+        server.videoParameterSets = { [weak streamer] in streamer?.videoParameterSets }
         server.devices.onApprovalNeeded = { [weak self] device in
             Task { @MainActor in self?.askAbout(device) }
         }

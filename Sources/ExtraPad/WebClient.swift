@@ -113,7 +113,7 @@ enum WebClient {
     /// them onto a canvas. Still ES5 - and deliberately light on per-message
     /// JavaScript, because a home-screen web app on an iPad 2 may be running
     /// without a JIT. The decoding stays in Safari's native JPEG path.
-    static func deltaPage(width: Int, height: Int, protocolVersion: Int = WireProtocol.version) -> String {
+    static func deltaPage(width: Int, height: Int, protocolVersion: Int = WireProtocol.atlas) -> String {
         let html = #"""
 <!DOCTYPE html>
 <html>
