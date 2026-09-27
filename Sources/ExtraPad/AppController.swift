@@ -82,6 +82,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         let streamer = ScreenStreamer(config: config)
+        streamer.showHUD = config.hud
         self.streamer = streamer
 
         let server = MJPEGServer(config: config,
@@ -274,6 +275,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
 
+        menu.addItem(.separator())
+        let hudItem = NSMenuItem(title: "iPad'de teshis seridi",
+                                 action: #selector(toggleHUD), keyEquivalent: "")
+        hudItem.target = self
+        hudItem.state = config.hud ? .on : .off
+        menu.addItem(hudItem)
+
         if virtualDisplay != nil {
             menu.addItem(.separator())
             let positionItem = NSMenuItem(title: "Konum", action: nil, keyEquivalent: "")
@@ -334,6 +342,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Cikis", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
+    }
+
+    @objc private func toggleHUD() {
+        config.hud.toggle()
+        Config.rememberHUD(config.hud)
+        // Every frame carries the flag, so connected iPads pick this up
+        // immediately - no reload.
+        streamer?.showHUD = config.hud
+        rebuildMenu()
     }
 
     @objc private func choosePosition(_ sender: NSMenuItem) {

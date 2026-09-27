@@ -4,7 +4,7 @@ import Foundation
 /// has no arrow functions, no template literals and no fetch. The stream itself
 /// is decoded by Safari's own JPEG path via <img>, so JS never touches pixels.
 enum WebClient {
-    static func page(width: Int, height: Int, fps: Int) -> String {
+    static func page(width: Int, height: Int, fps: Int, showHUD: Bool = false) -> String {
         let html = #"""
 <!DOCTYPE html>
 <html>
@@ -33,7 +33,7 @@ enum WebClient {
 </head>
 <body>
   <img id="screen" alt="">
-  <div id="hud">
+  <div id="hud" class="__HUDCLASS__">
     <b>ExtraPad</b>
     <span class="dim" id="info">baglaniyor&hellip;</span>
   </div>
@@ -105,6 +105,7 @@ enum WebClient {
             .replacingOccurrences(of: "__W__", with: String(width))
             .replacingOccurrences(of: "__H__", with: String(height))
             .replacingOccurrences(of: "__FPS__", with: String(fps))
+            .replacingOccurrences(of: "__HUDCLASS__", with: showHUD ? "" : "hidden")
     }
 
     /// Delta client: receives changed rectangles over a WebSocket and paints
@@ -138,8 +139,7 @@ enum WebClient {
 </head>
 <body>
   <canvas id="screen" width="__W__" height="__H__"></canvas>
-  <div id="hud"><b>ExtraPad</b> <span class="dim" id="info">baglaniyor&hellip;</span>
-    <span class="dim"> &middot; uc parmak: bilgi serisi</span></div>
+  <div id="hud" class="hidden"><b>ExtraPad</b> <span class="dim" id="info">baglaniyor&hellip;</span></div>
 <script>
 (function () {
   "use strict";
@@ -154,6 +154,7 @@ enum WebClient {
   var frames = 0, regions = 0, bytes = 0, decodeMs = 0;
   var windowStart = new Date().getTime();
   var ws = null, retries = 0;
+  var hudVisible = false;
 
   // One decode per frame, then a synchronous blit per region. Regions must land
   // in the order they were produced, so exactly one decode is ever in flight.
@@ -224,7 +225,15 @@ enum WebClient {
     ws.onmessage = function (event) {
       var buf = event.data;
       var view = new DataView(buf);
-      var isKey = view.getUint8(0) & 1;
+      var flags = view.getUint8(0);
+      var isKey = flags & 1;
+      // The Mac owns this: the menu toggles it and every frame carries the
+      // current state, so it takes effect without reloading the page.
+      var wantHud = (flags & 2) !== 0;
+      if (wantHud !== hudVisible) {
+        hudVisible = wantHud;
+        hud.className = wantHud ? "" : "hidden";
+      }
       var count = view.getUint8(1);
       var list = [];
       var off = 2;
@@ -274,7 +283,6 @@ enum WebClient {
   }
 
   function onStart(e) {
-    if (e.touches.length >= 3) { toggleHud(); return; }
     if (e.touches.length !== 1) { return; }
     e.preventDefault();
     sendInput("D", e.touches[0]);
@@ -297,10 +305,6 @@ enum WebClient {
     if (touch) { sendInput("U", touch); }
   }
 
-  function toggleHud() {
-    hud.className = hud.className === "hidden" ? "" : "hidden";
-  }
-
   canvas.addEventListener("touchstart", onStart, false);
   canvas.addEventListener("touchmove", onMove, false);
   canvas.addEventListener("touchend", onEnd, false);
@@ -311,7 +315,6 @@ enum WebClient {
     if (e.buttons === 1) { sendInput("M", e); }
   }, false);
   canvas.addEventListener("mouseup", function (e) { sendInput("U", e); }, false);
-  hud.addEventListener("click", toggleHud, false);
 
   if (!window.WebSocket) {
     info.innerHTML = "bu Safari WebSocket desteklemiyor - / adresini kullanin";

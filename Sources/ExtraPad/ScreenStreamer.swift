@@ -28,6 +28,8 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     private var config: Config
     private let configLock = NSLock()
     private let deltaEncoder = DeltaEncoder()
+    private let hudLock = NSLock()
+    private var _showHUD = false
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let sampleQueue = DispatchQueue(label: "dev.extrapad.capture", qos: .userInitiated)
@@ -156,6 +158,7 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
                          width: Int($0.size.width), height: Int($0.size.height))
                     },
                     isKeyframe: atlas.isKeyframe,
+                    showHUD: showHUD,
                     jpeg: atlas.jpeg)
                 patchBroadcaster.publish(PatchGroup(messages: [payload],
                                                     isKeyframe: atlas.isKeyframe))
@@ -178,6 +181,11 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Asks for a full frame on the next capture - used when a client joins and
     /// has no earlier pixels to patch onto.
     func requestKeyframe() { deltaEncoder.requestKeyframe() }
+
+    var showHUD: Bool {
+        get { hudLock.lock(); defer { hudLock.unlock() }; return _showHUD }
+        set { hudLock.lock(); _showHUD = newValue; hudLock.unlock() }
+    }
 
     var deltaStats: DeltaEncoder.Stats { deltaEncoder.stats }
     func resetDeltaStats() { deltaEncoder.resetStats() }

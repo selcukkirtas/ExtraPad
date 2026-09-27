@@ -219,7 +219,8 @@ final class MJPEGServer {
         case "/mjpeg":
             // Kept as a fallback: it needs no WebSocket, no canvas and no
             // JavaScript in the pixel path, so it works where delta will not.
-            let html = WebClient.page(width: config.width, height: config.height, fps: config.fps)
+            let html = WebClient.page(width: config.width, height: config.height,
+                                      fps: config.fps, showHUD: config.hud)
             send(conn, status: "200 OK", body: Data(html.utf8),
                  contentType: "text/html; charset=utf-8", setCookie: issueCookie)
 
@@ -388,7 +389,7 @@ final class MJPEGServer {
                 regions: [(sourceY: 0, destX: 0, destY: 0,
                            width: config.width * config.scale,
                            height: config.height * config.scale)],
-                isKeyframe: true, jpeg: latest)
+                isKeyframe: true, showHUD: config.hud, jpeg: latest)
             conn.send(content: WebSocket.binaryFrame(payload), completion: .contentProcessed { _ in })
         }
         onKeyframeRequest?()

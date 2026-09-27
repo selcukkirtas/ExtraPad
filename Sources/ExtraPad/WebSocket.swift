@@ -133,7 +133,7 @@ extension WebSocket {
     /// Atlas wire format, all big-endian so the browser can read it with
     /// DataView's defaults:
     ///
-    ///     u8  flags          bit 0 = keyframe
+    ///     u8  flags          bit 0 = keyframe, bit 1 = show the diagnostic strip
     ///     u8  regionCount
     ///     regionCount x { u16 sourceY, u16 destX, u16 destY, u16 width, u16 height }
     ///     ... JPEG bytes ...
@@ -141,9 +141,11 @@ extension WebSocket {
     /// One image per frame, however many rectangles it carries: the client
     /// decodes once and then blits each region out of it.
     static func atlasPayload(regions: [(sourceY: Int, destX: Int, destY: Int, width: Int, height: Int)],
-                             isKeyframe: Bool, jpeg: Data) -> Data {
+                             isKeyframe: Bool, showHUD: Bool = false, jpeg: Data) -> Data {
         var data = Data(capacity: 2 + regions.count * 10 + jpeg.count)
-        data.append(isKeyframe ? 1 : 0)
+        // Riding along on the existing flags byte keeps the HUD toggle live
+        // without a reload and without a second message type.
+        data.append((isKeyframe ? 1 : 0) | (showHUD ? 2 : 0))
         data.append(UInt8(clamping: regions.count))
         for region in regions {
             for value in [region.sourceY, region.destX, region.destY,

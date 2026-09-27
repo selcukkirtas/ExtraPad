@@ -21,6 +21,9 @@ struct Config {
     var input = true
     /// Require the access key. Off only for a network you already trust.
     var auth = true
+    /// Show the diagnostic strip on the iPad. Off by default - it earned its
+    /// keep while tuning, but it is clutter on a screen you actually use.
+    var hud = Config.saved(Config.hudKey, default: false)
     /// Which side of the existing arrangement the iPad sits on. Remembered
     /// between launches, because the virtual display is new every time and
     /// macOS has nothing to remember it by.
@@ -29,14 +32,23 @@ struct Config {
     static let positionDefaultsKey = "ExtraPadPosition"
     static let fpsKey = "ExtraPadFPS"
     static let qualityKey = "ExtraPadQuality"
+    static let hudKey = "ExtraPadHUD"
 
     static func saved<T>(_ key: String, default fallback: T) -> T {
         (UserDefaults.standard.object(forKey: key) as? T) ?? fallback
     }
 
+    /// Written through straight away: a setting the user just toggled should
+    /// not be lost if the app is quit a moment later.
+    static func rememberHUD(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: hudKey)
+        UserDefaults.standard.synchronize()
+    }
+
     static func remember(fps: Int?, quality: Double?) {
         if let fps { UserDefaults.standard.set(fps, forKey: fpsKey) }
         if let quality { UserDefaults.standard.set(quality, forKey: qualityKey) }
+        UserDefaults.standard.synchronize()
     }
 
     static var savedPosition: DisplayPosition {
@@ -80,6 +92,9 @@ struct Config {
             case "--mirror":   c.mirror = true
             case "--no-input": c.input = false
             case "--no-auth":  c.auth = false
+            case "--hud":
+                c.hud = true
+                Config.rememberHUD(true)
             case "--position":
                 if let v = next(), let p = DisplayPosition(rawValue: v.lowercased()) {
                     c.position = p
