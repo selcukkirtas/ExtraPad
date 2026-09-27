@@ -56,14 +56,33 @@ find "$APP" -name '.DS_Store' -delete 2>/dev/null || true
 xattr -cr "$APP" 2>/dev/null || true
 xattr -rd com.apple.FinderInfo "$APP" 2>/dev/null || true
 
+# Distribution builds need a "Developer ID Application" certificate, which only
+# a paid Apple Developer Program membership can create. When one is present we
+# sign for distribution - hardened runtime, secure timestamp - which is what
+# notarization requires. Otherwise we fall back to a development certificate,
+# which is fine for running it on this machine but not for shipping.
 IDENTITY="${EXTRAPAD_IDENTITY:-}"
+DISTRIBUTION=0
+
+if [ -z "$IDENTITY" ]; then
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+              | grep -m1 -oE '"Developer ID Application: [^"]+"' | tr -d '"')" || true
+  [ -n "$IDENTITY" ] && DISTRIBUTION=1
+fi
 if [ -z "$IDENTITY" ]; then
   IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
               | grep -m1 -oE '"Apple Development: [^"]+"' | tr -d '"')" || true
 fi
 
-if [ -n "$IDENTITY" ]; then
-  echo "==> signing with: $IDENTITY"
+if [ "$DISTRIBUTION" = "1" ]; then
+  echo "==> signing for distribution: $IDENTITY"
+  # Hardened runtime is mandatory for notarization. The private CoreGraphics
+  # classes this app uses are not affected by it - that restriction belongs to
+  # App Review, which this route does not go through.
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp "$APP" >/dev/null
+elif [ -n "$IDENTITY" ]; then
+  echo "==> signing for local use: $IDENTITY"
+  echo "    (no Developer ID certificate found - this build cannot be notarized)"
   codesign --force --sign "$IDENTITY" --timestamp=none "$APP" >/dev/null
 else
   echo "==> signing ad-hoc (no code signing certificate found)"
@@ -72,6 +91,33 @@ else
 fi
 
 codesign --verify --strict "$APP" || { echo "ERROR: signature could not be verified"; exit 1; }
+
+# Notarization: Apple scans the build and issues a ticket, which is then stapled
+# into the bundle so macOS accepts it offline. Without this, a downloaded app is
+# blocked by Gatekeeper no matter how it is signed.
+#
+# One-time setup, once a paid membership exists:
+#   xcrun notarytool store-credentials extrapad \
+#     --apple-id you@example.com --team-id TEAMID --password APP_SPECIFIC_PASSWORD
+# Then: EXTRAPAD_NOTARY_PROFILE=extrapad ./scripts/build-app.sh
+if [ -n "${EXTRAPAD_NOTARY_PROFILE:-}" ]; then
+  if [ "$DISTRIBUTION" != "1" ]; then
+    echo "ERROR: notarization needs a Developer ID Application certificate" >&2
+    exit 1
+  fi
+  ZIP="$APP_DIR/ExtraPad.zip"
+  echo "==> submitting for notarization (this takes a few minutes)"
+  /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
+  xcrun notarytool submit "$ZIP" --keychain-profile "$EXTRAPAD_NOTARY_PROFILE" --wait
+  echo "==> stapling the ticket"
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  # Re-zip so the distributed archive contains the stapled bundle.
+  rm -f "$ZIP"
+  /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "==> ready to distribute: $ZIP"
+  echo "    Verify as a user would:  spctl --assess --type execute -vv \"$APP\""
+fi
 
 # Convenience pointer so the app is still reachable from the project directory.
 mkdir -p "$ROOT/build"
