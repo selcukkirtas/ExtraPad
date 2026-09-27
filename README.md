@@ -124,6 +124,36 @@ alabildigini alir, gerisi atlanir. `framesSkipped` sayisinin yuksek olmasi hata
 degil, geri baskinin calistiginin isaretidir - kareler kuyruklanmadigi icin
 goruntu gecikmeli degil yalnizca seyrek olur.
 
+## Iki yayin modu
+
+| Adres | Yol | Kullanim |
+|---|---|---|
+| `/` | Tam kare MJPEG, `<img>` icinde | Her seyde calisir, hicbir JS pikselle ugrasmaz |
+| `/delta` | Sadece degisen dikdortgenler, WebSocket + canvas | Cok daha az bant genisligi |
+
+Delta modunda ekran 32px'lik karolarla onceki kareyle karsilastirilir, degisen
+karolar birkac buyuk dikdortgene birlestirilir ve yalnizca onlar JPEG'lenip
+gonderilir. Ekranin yarisindan fazlasi degistiyse tek bir tam kare gondermek daha
+ucuz oldugu icin keyframe'e dusulur.
+
+Ayni makinede, ayni kalitede (0.6) olculdu:
+
+| | `/` (MJPEG) | `/delta` |
+|---|---|---|
+| Hareketsiz ekran | ~0 | 0 |
+| Imlec hareketi | 8.3 Mbit/s | **1.1 Mbit/s** |
+| Teslim | 6.8 fps | ~72 bolge/sn (≈30 fps) |
+| Ortalama gonderim | 158 KB/kare | 1.9 KB/bolge (ekranin %0.9'u) |
+
+Delta modunun iki tasarim kisiti var, ikisi de eski iPad'den geliyor:
+
+- **Dikdortgenler az ve buyuk tutulur.** Her bolge icin bir JavaScript cagrisi
+  gerekiyor ve ana ekrana eklenmis bir web uygulamasi eski iOS'ta JIT'siz
+  calisabiliyor. Bu yuzden karo basina degil, dikdortgen basina maliyet onemli.
+- **Hicbir yama atlanamaz.** Kacirilan bir yama, bir sonraki keyframe'e kadar
+  ekranda bayat bir dikdortgen birakir. Yetisemeyen istemci bu yuzden yarim
+  guncelleme almak yerine tamamen atlanir ve kendisine keyframe istenir.
+
 ## Bilinen sinirlar
 
 - **Dokunma girisi yok.** Sadece goruntu. iPad'den Mac'i kontrol etmek ayri bir

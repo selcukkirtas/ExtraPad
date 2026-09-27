@@ -23,9 +23,11 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     let broadcaster = FrameBroadcaster()
+    let patchBroadcaster = PatchBroadcaster()
 
     private var config: Config
     private let configLock = NSLock()
+    private let deltaEncoder = DeltaEncoder()
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let sampleQueue = DispatchQueue(label: "dev.extrapad.capture", qos: .userInitiated)
@@ -143,6 +145,24 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
         let quality = config.quality
         configLock.unlock()
 
+        // Delta clients and full-frame clients need different work, so only do
+        // the encoding somebody is actually waiting for.
+        let wantsPatches = patchBroadcaster.subscriberCount > 0
+        if wantsPatches {
+            let patches = deltaEncoder.encode(pixelBuffer, quality: quality)
+            if !patches.isEmpty {
+                let messages = patches.map {
+                    WebSocket.patchPayload(x: Int($0.rect.minX), y: Int($0.rect.minY),
+                                           width: Int($0.rect.width), height: Int($0.rect.height),
+                                           isKeyframe: $0.isKeyframe, jpeg: $0.jpeg)
+                }
+                patchBroadcaster.publish(
+                    PatchGroup(messages: messages, isKeyframe: patches.contains { $0.isKeyframe }))
+            }
+        }
+
+        guard broadcaster.subscriberCount > 0 || !wantsPatches else { return }
+
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         guard let jpeg = ciContext.jpegRepresentation(
             of: image,
@@ -153,6 +173,10 @@ final class ScreenStreamer: NSObject, SCStreamOutput, SCStreamDelegate {
 
         broadcaster.publish(jpeg)
     }
+
+    /// Asks for a full frame on the next capture - used when a client joins and
+    /// has no earlier pixels to patch onto.
+    func requestKeyframe() { deltaEncoder.requestKeyframe() }
 
     // MARK: - SCStreamDelegate
 

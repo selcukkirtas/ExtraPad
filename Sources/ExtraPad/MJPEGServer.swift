@@ -10,6 +10,7 @@ final class MJPEGServer {
 
     private var config: Config
     private let broadcaster: FrameBroadcaster
+    private let patchBroadcaster: PatchBroadcaster
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
 
@@ -38,10 +39,13 @@ final class MJPEGServer {
 
     /// Called when /set asks for new capture settings.
     var onSettingsChange: ((Double?, Int?) -> Void)?
+    /// Called when a delta client needs a full frame to draw on top of.
+    var onKeyframeRequest: (() -> Void)?
 
-    init(config: Config, broadcaster: FrameBroadcaster) {
+    init(config: Config, broadcaster: FrameBroadcaster, patchBroadcaster: PatchBroadcaster) {
         self.config = config
         self.broadcaster = broadcaster
+        self.patchBroadcaster = patchBroadcaster
     }
 
     func start() throws {
@@ -134,6 +138,13 @@ final class MJPEGServer {
         case "/stream":
             startStream(conn)
 
+        case "/ws":
+            startWebSocket(conn, requestHead: requestHead)
+
+        case "/delta":
+            let html = WebClient.deltaPage(width: config.width, height: config.height)
+            send(conn, status: "200 OK", body: Data(html.utf8), contentType: "text/html; charset=utf-8")
+
         case "/snapshot":
             if let frame = broadcaster.latestFrame {
                 send(conn, status: "200 OK", body: frame, contentType: "image/jpeg")
@@ -207,6 +218,100 @@ final class MJPEGServer {
         var out = Data(header.utf8)
         out.append(body)
         conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
+    }
+
+    // MARK: - WebSocket delta stream
+
+    private func startWebSocket(_ conn: NWConnection, requestHead: String) {
+        guard let handshake = WebSocket.handshakeResponse(requestHead: requestHead) else {
+            send(conn, status: "400 Bad Request", body: Data("WebSocket yukseltmesi bekleniyor\n".utf8),
+                 contentType: "text/plain; charset=utf-8")
+            return
+        }
+        conn.send(content: handshake, completion: .contentProcessed { _ in })
+
+        let clientID = UInt64(bitPattern: Int64(ObjectIdentifier(conn).hashValue))
+        let address: String
+        if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "bilinmiyor" }
+        clientLock.lock()
+        _clients[clientID] = ClientStats(address: address + " (delta)")
+        clientLock.unlock()
+
+        let inFlight = Atomic(false)
+        let desynced = Atomic(false)
+        let finished = Atomic(false)
+        var subscription: PatchBroadcaster.SubscriberID?
+
+        let teardown: () -> Void = { [weak self] in
+            guard let self, !finished.exchange(true) else { return }
+            if let subscription { self.patchBroadcaster.unsubscribe(subscription) }
+            self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
+            conn.cancel()
+        }
+
+        // The client's canvas is blank, and an idle screen produces no new
+        // frames to build a keyframe from - so prime it with the last full
+        // frame we already have, then ask for a fresh one.
+        if let latest = broadcaster.latestFrame {
+            let payload = WebSocket.patchPayload(x: 0, y: 0,
+                                                 width: config.width * config.scale,
+                                                 height: config.height * config.scale,
+                                                 isKeyframe: true, jpeg: latest)
+            conn.send(content: WebSocket.binaryFrame(payload), completion: .contentProcessed { _ in })
+        }
+        onKeyframeRequest?()
+
+        subscription = patchBroadcaster.subscribe { [weak self] group in
+            guard let self, !finished.value else { return }
+
+            // A missed patch leaves a stale rectangle on the canvas forever, so
+            // a client that falls behind is skipped until the next keyframe
+            // rather than fed a partial update.
+            if desynced.value && !group.isKeyframe {
+                self.onKeyframeRequest?()
+                return
+            }
+            if inFlight.exchange(true) {
+                desynced.store(true)
+                self.clientLock.lock()
+                self._clients[clientID]?.framesSkipped += 1
+                self.clientLock.unlock()
+                self.onKeyframeRequest?()
+                return
+            }
+            desynced.store(false)
+
+            // One write per screen update, however many rectangles it contains.
+            var payload = Data()
+            for message in group.messages { payload.append(WebSocket.binaryFrame(message)) }
+            let size = payload.count
+
+            conn.send(content: payload, completion: .contentProcessed { error in
+                inFlight.store(false)
+                if error != nil { teardown(); return }
+                self.clientLock.lock()
+                self._clients[clientID]?.framesSent += 1
+                self._clients[clientID]?.bytesSent += size
+                self.clientLock.unlock()
+            })
+        }
+
+        // Only thing expected back from the browser is a close frame.
+        func readClose() {
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 1024) { data, _, isComplete, error in
+                if error != nil || isComplete { teardown(); return }
+                if let data, WebSocket.isCloseFrame(data) { teardown(); return }
+                if !finished.value { readClose() }
+            }
+        }
+        readClose()
+
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .failed, .cancelled: teardown()
+            default: break
+            }
+        }
     }
 
     private func startStream(_ conn: NWConnection) {
