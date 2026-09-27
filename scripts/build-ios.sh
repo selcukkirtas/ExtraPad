@@ -24,7 +24,7 @@ rm -rf "$APP"
 mkdir -p "$APP"
 xcrun -sdk iphonesimulator swiftc \
   -target "$TARGET" -sdk "$SDK" \
-  -swift-version 5 \
+  -swift-version 5 -D DEBUG \
   -emit-executable -o "$APP/ExtraPadClient" \
   "$ROOT"/Sources/ExtraPadClient/*.swift \
   "$ROOT"/Sources/ExtraPadProtocol/*.swift

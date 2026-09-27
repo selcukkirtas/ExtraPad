@@ -1,6 +1,6 @@
 # Plan: App Store distribution, a native iPad app, and discovery
 
-Status: decisions made, Phase A in progress.
+Status: Phase A complete, Phase B minimum viable running in the Simulator.
 
 ## Decisions
 
@@ -225,10 +225,18 @@ review notes, demo mode. Submit.
 
 | Step | Needs membership | State |
 |---|---|---|
-| A1 - Protocol version and stale-client recovery | no | |
-| A2 - `_extrapad._tcp` advertising with a TXT record | no | |
-| A3 - Notarization wired into the build script | written now, runs later | |
-| A4 - Split into shared modules | no | |
+| A1 - Protocol version and stale-client recovery | no | done |
+| A2 - `_extrapad._tcp` advertising with a TXT record | no | done |
+| A3 - Notarization wired into the build script | written now, runs later | done |
+| A4 - Split into shared modules | no | done |
+
+All four are done. Phase B's first milestone is also running: the native client
+discovers hosts, pairs with the six-digit code, streams and renders, verified in
+the Simulator against the live host.
+
+Still to do in Phase B: touch input exercised on a real device (the Simulator
+offers no way to tap from a script, so only the coordinate mapping is covered -
+by tests), reconnect handling, and remembering a paired host in the Keychain.
 
 A4 is the largest and the one that enables Phase B, so it is deliberately last:
 each earlier step is small enough to verify on its own, and the old iPad has to

@@ -3,8 +3,18 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var discovery = HostDiscovery()
     @State private var status: String = ""
+    @State private var connection: HostConnection?
+    @State private var chosen: DiscoveredHost?
 
     var body: some View {
+        if let connection, let chosen {
+            ConnectedView(connection: connection, host: chosen, onLeave: leave)
+        } else {
+            browser
+        }
+    }
+
+    private var browser: some View {
         // NavigationStack is iOS 16+; this app targets 15.
         NavigationView {
             Group {
@@ -23,7 +33,10 @@ struct ContentView: View {
             .navigationTitle("ExtraPad")
         }
         .navigationViewStyle(.stack)
-        .onAppear { discovery.start() }
+        .onAppear {
+            discovery.start()
+            autoConnectIfAsked()
+        }
         .onDisappear { discovery.stop() }
     }
 
@@ -72,11 +85,49 @@ struct ContentView: View {
 
     private func pick(_ host: DiscoveredHost) async {
         status = ""
+        guard WireProtocol.canServe(host.protocolVersion) else {
+            status = "\(host.name) speaks protocol \(host.protocolVersion); this app speaks \(WireProtocol.version)."
+            return
+        }
         do {
             let url = try await discovery.resolve(host)
-            status = "Resolved \(host.name) to \(url.absoluteString)"
+            let connection = HostConnection(baseURL: url)
+            self.connection = connection
+            self.chosen = host
+            discovery.stop()
+            await connection.begin()
         } catch {
             status = error.localizedDescription
         }
+    }
+
+    /// Smoke-test hook. The Simulator offers no way to tap a button from a
+    /// script, so a debug build can be told to pick the first host it sees and
+    /// submit a code. Compiled out of release builds entirely.
+    private func autoConnectIfAsked() {
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["EXTRAPAD_AUTOCONNECT"] == "1" else { return }
+        let code = environment["EXTRAPAD_CODE"] ?? ""
+        Task {
+            for _ in 0..<40 {
+                if let host = discovery.hosts.first {
+                    await pick(host)
+                    if let connection, connection.state == .needsCode, !code.isEmpty {
+                        await connection.submit(code: code)
+                    }
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+        #endif
+    }
+
+    private func leave() {
+        connection?.stop()
+        connection = nil
+        chosen = nil
+        discovery.start()
     }
 }
