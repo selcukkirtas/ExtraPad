@@ -25,7 +25,7 @@ struct ConnectedView: View {
             }
         case .connecting, .idle:
             ProgressView("Connecting to \(host.name)")
-        case .streaming:
+        case .streaming, .reconnecting:
             ScreenView(connection: connection, hostName: host.name, onLeave: onLeave)
         }
     }

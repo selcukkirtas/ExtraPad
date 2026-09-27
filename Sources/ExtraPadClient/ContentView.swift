@@ -91,7 +91,7 @@ struct ContentView: View {
         }
         do {
             let url = try await discovery.resolve(host)
-            let connection = HostConnection(baseURL: url)
+            let connection = HostConnection(baseURL: url, hostID: host.id)
             self.connection = connection
             self.chosen = host
             discovery.stop()

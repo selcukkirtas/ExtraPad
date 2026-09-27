@@ -234,9 +234,21 @@ All four are done. Phase B's first milestone is also running: the native client
 discovers hosts, pairs with the six-digit code, streams and renders, verified in
 the Simulator against the live host.
 
-Still to do in Phase B: touch input exercised on a real device (the Simulator
-offers no way to tap from a script, so only the coordinate mapping is covered -
-by tests), reconnect handling, and remembering a paired host in the Keychain.
+Phase B now also remembers a pairing and recovers from a dropped connection,
+both verified in the Simulator: relaunching without a code goes straight to the
+screen at 43 fps.
+
+One thing in Phase B remains unverified and cannot be verified here: **touch
+input from the native client**. The Simulator offers no way to tap from a
+script, so only the coordinate mapping is covered, by tests. It needs a real
+device.
+
+Note for Phase D: the Keychain cannot be exercised in the scripted Simulator
+build. Keychain access needs an application identifier, and a simulator binary
+refuses a re-signature carrying entitlements - the launch fails with POSIX 163.
+A real Xcode project has proper entitlements, so this resolves itself there; a
+DEBUG-only fallback exists purely so the flow can be exercised meanwhile, and
+is compiled out of release builds.
 
 A4 is the largest and the one that enables Phase B, so it is deliberately last:
 each earlier step is small enough to verify on its own, and the old iPad has to

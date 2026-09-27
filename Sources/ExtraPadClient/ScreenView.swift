@@ -43,11 +43,19 @@ struct ScreenView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 8)
-            Text(String(format: "%.0f fps · %.2f Mbit/s",
-                        connection.framesPerSecond, connection.megabitsPerSecond))
-                .font(.caption2.monospacedDigit())
-                .lineLimit(1)
-                .fixedSize()
+            if case let .reconnecting(attempt) = connection.state {
+                Text("reconnecting (\(attempt))")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .lineLimit(1)
+                    .fixedSize()
+            } else {
+                Text(String(format: "%.0f fps · %.2f Mbit/s",
+                            connection.framesPerSecond, connection.megabitsPerSecond))
+                    .font(.caption2.monospacedDigit())
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
