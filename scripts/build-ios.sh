@@ -42,6 +42,11 @@ cat > "$APP/Info.plist" <<'PLIST'
     <key>CFBundleShortVersionString</key> <string>0.1.0</string>
     <key>CFBundleVersion</key>            <string>1</string>
     <key>MinimumOSVersion</key>           <string>15.0</string>
+    <!-- Universal: 1 = iPhone, 2 = iPad. Declared rather than left to a
+         default, because App Store Connect reads this to decide which devices
+         the app supports and which screenshots are required. -->
+    <key>UIDeviceFamily</key>
+    <array><integer>1</integer><integer>2</integer></array>
     <key>UILaunchScreen</key>             <dict/>
     <key>UIRequiresFullScreen</key>       <true/>
     <key>UISupportedInterfaceOrientations</key>
