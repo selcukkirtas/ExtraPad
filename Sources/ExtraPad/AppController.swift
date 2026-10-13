@@ -163,8 +163,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                     completion(nil)
                     return
                 }
-                guard let session = sessions?.session(for: deviceID, preferredSize: size,
-                                                       deviceName: name) else {
+                guard let session = await sessions?.session(for: deviceID, preferredSize: size,
+                                                             deviceName: name) else {
                     completion(nil)
                     return
                 }

@@ -61,6 +61,11 @@ final class HostConnection: ObservableObject {
     private(set) var isEncrypted = false
 
     private var wakeLock: AnyCancellable?
+    private var orientationObserver: NSObjectProtocol?
+    /// What the host last built the display for. Compared against on every
+    /// rotation notification, because that notification fires for face-up/
+    /// face-down too - only an actual width/height swap is worth a reconnect.
+    private var lastKnownScreenSize: CGSize = UIScreen.main.bounds.size
 
     init(baseURL: URL, hostID: String, tlsFingerprint: String? = nil) {
         self.baseURL = baseURL
@@ -86,6 +91,38 @@ final class HostConnection: ObservableObject {
             .sink { keepAwake in
                 UIApplication.shared.isIdleTimerDisabled = keepAwake
             }
+
+        // The host sizes the virtual display once, at connect time - turning
+        // the iPad after that needs a fresh connection to tell it the screen
+        // changed shape. Portrait and landscape otherwise worked only by
+        // accident, whichever one happened to be current when the app
+        // launched.
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        orientationObserver = NotificationCenter.default.addObserver(
+            forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.handleOrientationChange() }
+        }
+    }
+
+    deinit {
+        if let orientationObserver {
+            NotificationCenter.default.removeObserver(orientationObserver)
+        }
+    }
+
+    /// Debounced against the rotation animation, and against the
+    /// notification firing for orientations that don't change the screen's
+    /// shape (face-up, face-down, unknown).
+    private func handleOrientationChange() async {
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        let newSize = UIScreen.main.bounds.size
+        guard newSize != lastKnownScreenSize else { return }
+        lastKnownScreenSize = newSize
+        guard state == .streaming else { return }
+        socket?.cancel()
+        socket = nil
+        await openStream()
     }
 
     /// A self-signed certificate is refused by the default trust evaluation,
@@ -224,9 +261,14 @@ final class HostConnection: ObservableObject {
         // Ask for the best the host offers; it refuses anything it cannot
         // serve, so this cannot silently produce an unreadable stream.
         negotiatedVersion = hostProtocolVersion
+        let screenSize = UIScreen.main.bounds.size
         components?.queryItems = [
             URLQueryItem(name: WireNames.versionQuery, value: String(negotiatedVersion)),
             URLQueryItem(name: WireNames.deviceNameQuery, value: UIDevice.current.name),
+            // Whatever shape the screen is right now - portrait or landscape,
+            // the host sizes the virtual display to match. Safari sends this
+            // too; the native client simply never had before.
+            URLQueryItem(name: "size", value: "\(Int(screenSize.width))x\(Int(screenSize.height))"),
         ]
         guard let url = components?.url else {
             state = .failed("Could not build the stream address.")

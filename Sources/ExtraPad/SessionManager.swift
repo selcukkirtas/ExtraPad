@@ -32,12 +32,24 @@ final class SessionManager {
     }
 
     /// The session for a device, creating one at the size that device asked
-    /// for. A device that returns gets its display back rather than a new one.
+    /// for. A device that returns gets its display back rather than a new
+    /// one - unless it's asking for a different size than last time, which
+    /// is what an iPad rotating looks like from here. A virtual display
+    /// can't be resized in place, so that case rebuilds it from scratch at
+    /// the new shape, same as if the device were new.
     func session(for deviceID: String, preferredSize: CGSize?,
-                deviceName: String? = nil) -> DisplaySession? {
+                deviceName: String? = nil) async -> DisplaySession? {
         if let existing = sessions[deviceID] {
-            existing.markBusy()
-            return existing
+            if let preferredSize, preferredSize.width >= 256, preferredSize.height >= 256,
+               (Int(preferredSize.width) != existing.config.width
+                || Int(preferredSize.height) != existing.config.height) {
+                await existing.shutDown()
+                sessions.removeValue(forKey: deviceID)
+                onSessionRemoved?(deviceID)
+            } else {
+                existing.markBusy()
+                return existing
+            }
         }
         guard sessions.count < Self.maximumSessions else { return nil }
 
