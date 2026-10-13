@@ -563,6 +563,18 @@ final class AppController: NSObject, NSApplicationDelegate {
         checkUpdate.target = self
         menu.addItem(checkUpdate)
 
+        #if DEBUG
+        // Simulator has no physical rotation, and the Rotate Device menu
+        // item some builds ship with isn't always reachable - this exercises
+        // the exact resize path a real iPad's orientation change triggers,
+        // without needing either. Compiled out of release builds, so it's
+        // never something a real user sees.
+        let debugRotate = NSMenuItem(title: "Debug: Swap Connected Display Orientation",
+                                     action: #selector(debugRotateDisplay), keyEquivalent: "")
+        debugRotate.target = self
+        menu.addItem(debugRotate)
+        #endif
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -571,6 +583,19 @@ final class AppController: NSObject, NSApplicationDelegate {
     @objc private func openFeedback() {
         NSWorkspace.shared.open(URL(string: "https://extrapad.app/feedback")!)
     }
+
+    #if DEBUG
+    @objc private func debugRotateDisplay() {
+        Task { @MainActor in
+            guard let sessions else { return }
+            for (deviceID, session) in sessions.sessions {
+                let swapped = CGSize(width: session.config.height, height: session.config.width)
+                _ = await sessions.session(for: deviceID, preferredSize: swapped)
+            }
+            rebuildMenu()
+        }
+    }
+    #endif
 
     @objc private func checkForUpdate() {
         Task { @MainActor in

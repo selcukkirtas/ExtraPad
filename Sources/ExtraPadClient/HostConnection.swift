@@ -65,7 +65,21 @@ final class HostConnection: ObservableObject {
     /// What the host last built the display for. Compared against on every
     /// rotation notification, because that notification fires for face-up/
     /// face-down too - only an actual width/height swap is worth a reconnect.
-    private var lastKnownScreenSize: CGSize = UIScreen.main.bounds.size
+    private var lastKnownScreenSize: CGSize = HostConnection.currentScreenSize
+
+    /// `UIScreen.main.bounds` stopped rotating with the interface back in
+    /// iOS 8 - it stays fixed in the device's native orientation no matter
+    /// which way the app is actually facing, which is why the display kept
+    /// coming up in the same shape it started in regardless of how the iPad
+    /// was held. The key window's bounds are what actually track rotation.
+    private static var currentScreenSize: CGSize {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }.first
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        return window?.bounds.size ?? UIScreen.main.bounds.size
+    }
 
     init(baseURL: URL, hostID: String, tlsFingerprint: String? = nil) {
         self.baseURL = baseURL
@@ -116,7 +130,7 @@ final class HostConnection: ObservableObject {
     /// shape (face-up, face-down, unknown).
     private func handleOrientationChange() async {
         try? await Task.sleep(nanoseconds: 350_000_000)
-        let newSize = UIScreen.main.bounds.size
+        let newSize = Self.currentScreenSize
         guard newSize != lastKnownScreenSize else { return }
         lastKnownScreenSize = newSize
         guard state == .streaming else { return }
@@ -261,7 +275,7 @@ final class HostConnection: ObservableObject {
         // Ask for the best the host offers; it refuses anything it cannot
         // serve, so this cannot silently produce an unreadable stream.
         negotiatedVersion = hostProtocolVersion
-        let screenSize = UIScreen.main.bounds.size
+        let screenSize = Self.currentScreenSize
         components?.queryItems = [
             URLQueryItem(name: WireNames.versionQuery, value: String(negotiatedVersion)),
             URLQueryItem(name: WireNames.deviceNameQuery, value: UIDevice.current.name),
