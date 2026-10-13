@@ -69,12 +69,12 @@ struct ContentView: View {
             Text("Nothing found yet")
                 .font(.subheadline.weight(.semibold))
             Text("ExtraPad needs to be running on a Mac on this network. "
-                 + "If you haven't installed it there yet, get it at extrapad.com.")
+                 + "If you haven't installed it there yet, get it at extrapad.app.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 40)
-            Link("Get ExtraPad for Mac", destination: URL(string: "https://extrapad.com")!)
+            Link("Get ExtraPad for Mac", destination: URL(string: "https://extrapad.app")!)
                 .font(.footnote.weight(.semibold))
         }
         .padding(.top, 4)

@@ -47,7 +47,7 @@ enum License {
 
     // MARK: - Configuration
 
-    static let buyURL = URL(string: "https://extrapad.com/#pricing")!
+    static let buyURL = URL(string: "https://extrapad.app/#pricing")!
     /// The $0 "ExtraPad Trial" product's checkout link - a real LemonSqueezy
     /// checkout, just with nothing to pay. Collects the buyer's email and
     /// issues a 14-day license key the same way a purchase issues a

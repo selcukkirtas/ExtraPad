@@ -45,6 +45,13 @@ final class AppController: NSObject, NSApplicationDelegate {
             _ = await License.refresh()
             rebuildMenu()
         }
+        // Once per launch, quietly - not on a timer. Someone who leaves
+        // ExtraPad running for a week doesn't need to be asked seven times.
+        Task { @MainActor in
+            if let release = await UpdateChecker.checkForUpdate() {
+                UpdateChecker.presentAlert(for: release)
+            }
+        }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 if self?.needsInputPermission == true, InputInjector.isPermitted {
@@ -551,6 +558,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         let feedback = NSMenuItem(title: "Send Feedback...", action: #selector(openFeedback), keyEquivalent: "")
         feedback.target = self
         menu.addItem(feedback)
+        let checkUpdate = NSMenuItem(title: "Check for Updates...",
+                                     action: #selector(checkForUpdate), keyEquivalent: "")
+        checkUpdate.target = self
+        menu.addItem(checkUpdate)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -558,7 +569,20 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openFeedback() {
-        NSWorkspace.shared.open(URL(string: "https://extrapad.com/feedback")!)
+        NSWorkspace.shared.open(URL(string: "https://extrapad.app/feedback")!)
+    }
+
+    @objc private func checkForUpdate() {
+        Task { @MainActor in
+            if let release = await UpdateChecker.checkForUpdate() {
+                UpdateChecker.presentAlert(for: release)
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "You're up to date"
+                alert.informativeText = "ExtraPad \(UpdateChecker.currentVersion) is the latest version."
+                alert.runModal()
+            }
+        }
     }
 
     @objc private func toggleHUD() {
