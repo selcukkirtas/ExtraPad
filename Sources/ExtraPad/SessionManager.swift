@@ -33,7 +33,8 @@ final class SessionManager {
 
     /// The session for a device, creating one at the size that device asked
     /// for. A device that returns gets its display back rather than a new one.
-    func session(for deviceID: String, preferredSize: CGSize?) -> DisplaySession? {
+    func session(for deviceID: String, preferredSize: CGSize?,
+                deviceName: String? = nil) -> DisplaySession? {
         if let existing = sessions[deviceID] {
             existing.markBusy()
             return existing
@@ -47,7 +48,7 @@ final class SessionManager {
         }
 
         let slot = nextFreeSlot()
-        let session = DisplaySession(id: deviceID, config: config, slot: slot)
+        let session = DisplaySession(id: deviceID, config: config, slot: slot, deviceName: deviceName)
         sessions[deviceID] = session
         onSessionCreated?(session)
         return session
@@ -64,6 +65,21 @@ final class SessionManager {
             onSessionRemoved?(id)
         }
         sessions.removeAll()
+    }
+
+    /// The same teardown as `shutDownAll`, minus cancelling the reaper - the
+    /// app keeps running and a license entered a moment later should be able
+    /// to create fresh sessions normally. Returns the device IDs that were
+    /// live, so callers can drop their connections too.
+    @discardableResult
+    func shutDownAllForExpiredTrial() async -> [String] {
+        let ids = Array(sessions.keys)
+        for (id, session) in sessions {
+            await session.shutDown()
+            onSessionRemoved?(id)
+        }
+        sessions.removeAll()
+        return ids
     }
 
     func apply(quality: Double?, fps: Int?) async {

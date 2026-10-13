@@ -52,11 +52,32 @@ struct ContentView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 40)
+            } else if discovery.macAppLikelyMissing {
+                needsMacApp
             }
             if !status.isEmpty {
                 Text(status).font(.footnote).foregroundStyle(.red)
             }
         }
+    }
+
+    /// The most common reason nothing turns up: this is the iPad half of a
+    /// pair, and nobody has launched the Mac half yet. A spinner alone reads
+    /// as broken rather than as "waiting on the other piece."
+    private var needsMacApp: some View {
+        VStack(spacing: 10) {
+            Text("Nothing found yet")
+                .font(.subheadline.weight(.semibold))
+            Text("ExtraPad needs to be running on a Mac on this network. "
+                 + "If you haven't installed it there yet, get it at extrapad.com.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 40)
+            Link("Get ExtraPad for Mac", destination: URL(string: "https://extrapad.com")!)
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(.top, 4)
     }
 
     private func row(_ host: DiscoveredHost) -> some View {

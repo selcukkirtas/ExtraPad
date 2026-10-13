@@ -63,6 +63,45 @@ Most iPads still on iOS 9-11 are not Retina, and those that are still report
 1024x768 CSS pixels to Safari. Encoding 2048x1536 costs GPU on the Mac,
 bandwidth on the air and decode time on the iPad, and gives nothing visible back.
 
+### Why the host tells the client when it is locked
+An iPad is only a second display while somebody is at the Mac. The client holds
+the iPad's screen awake (`isIdleTimerDisabled`) so it does not go dark mid-use,
+and that lock has to be released by something - otherwise the iPad has to be set
+to Auto-Lock: Never, and then it sits lit up all night next to a locked Mac.
+
+So the host watches its own state (`HostPresence`: the screen-lock distributed
+notifications plus `NSWorkspace` sleep - not the screen saver and not display
+sleep, because somebody watching a video on the iPad touches nothing for twenty
+minutes and must not have the stream cut off) and pushes `S locked` / `S awake` to every connected client as a WebSocket *text* frame - the one thing
+on that socket that is not pixels. A text frame rather than a flag inside the
+frame payload for two reasons: the two protocol versions share no payload
+format, and a locked Mac has stopped producing frames to piggyback on, which is
+exactly when the signal has to arrive.
+
+Locking does three more things, in the same place: capture stops (a locked Mac
+that keeps streaming its screen has not really been locked), injected input is
+refused, and the client blanks the last frame it was given. The virtual display
+itself stays - destroying it makes macOS relocate every window on it, and a lock
+must not rearrange the user's desk.
+
+### Why there is a video file inside the web client
+The native client holds the iPad awake with `isIdleTimerDisabled`. The web
+client runs on an iPad 2, where that API does not exist and the Screen Wake Lock
+API is seven major versions away - so the only state iOS has ever honoured is
+"a video is playing". A 1.5 KB silent 16x16 clip loops for exactly as long as
+frames are arriving and the Mac is unlocked, and is paused on `S locked` or a
+dead socket.
+
+Two things make it awkward, and both are visible in the page. iOS starts no
+playback outside a user gesture, and a gesture does not survive the navigation
+onto the page - hence the "Tap once to keep this screen awake" hint, dismissed
+by the first touch, which is a touch the user was going to make anyway. And the
+iPad 2's hardware decoder is the bottleneck in the real stream, which is why the
+clip is one frame per second at 16x16 rather than anything more convenient.
+
+iOS 9 does honour it: measured on the iPad 2 this client is for, the screen
+stayed lit well past its two-minute Auto-Lock with nothing touching it.
+
 ## What measurement changed
 
 Every significant decision here came from a number, and several reversed an

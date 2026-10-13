@@ -28,20 +28,27 @@ final class DisplaySession {
 
     var isIdle: Bool { idleSince != nil }
 
-    init(id: String, config: Config, slot: Int) {
+    init(id: String, config: Config, slot: Int, deviceName: String? = nil) {
         var config = config
         config.positionSlot = slot
         self.id = id
         self.config = config
         self.streamer = ScreenStreamer(config: config)
         self.streamer.showHUD = config.hud
-        createDisplay(slot: slot)
+        createDisplay(slot: slot, deviceName: deviceName)
     }
 
-    private func createDisplay(slot: Int) {
+    /// "ExtraPad - iPad Air" when the client said who it is (the native app
+    /// only - Safari's user agent cannot tell an iPad 2 from an iPad Air), a
+    /// slot number otherwise.
+    private func createDisplay(slot: Int, deviceName: String?) {
         guard !config.mirror, EPVirtualDisplay.supported else { return }
+        let name = deviceName.flatMap { trimmed -> String? in
+            let value = trimmed.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : "ExtraPad - \(value)"
+        } ?? "ExtraPad \(slot + 1)"
         guard let created = EPVirtualDisplay(
-            name: "ExtraPad \(slot + 1)",
+            name: name,
             pixelsWide: UInt(config.width * config.scale),
             pixelsHigh: UInt(config.height * config.scale),
             refreshRate: config.refreshRate,
@@ -54,8 +61,37 @@ final class DisplaySession {
         DisplayArrangement.arrange(created.displayID, position: config.position, slot: slot)
     }
 
+    /// Whether capture is running right now. False between a lock and the
+    /// unlock that follows it, with the display itself still in place.
+    private(set) var isCapturing = false
+
     func startCapture() async throws {
         try await streamer.start(displayID: displayID)
+        isCapturing = true
+    }
+
+    /// Stops capturing but keeps the virtual display, used while the Mac is
+    /// locked.
+    ///
+    /// Two reasons, and the first one is the important one: a locked Mac that
+    /// carries on streaming its screen to an iPad has not really been locked.
+    /// The second is that nobody is looking, so the encoding is waste. The
+    /// display stays because tearing it down makes macOS relocate every window
+    /// on it - a lock must not rearrange the user's desk.
+    func pauseCapture() async {
+        guard isCapturing else { return }
+        isCapturing = false
+        await streamer.stop()
+    }
+
+    func resumeCapture() async throws {
+        guard !isCapturing else { return }
+        try await startCapture()
+        // Whoever is watching still has the frame from before the lock on
+        // screen, and both encoders have lost the pixels they were predicting
+        // against - so neither may send a difference against it.
+        streamer.requestKeyframe()
+        streamer.requestVideoKeyframe()
     }
 
     /// A thread-safe view of this session for the network layer.
@@ -78,6 +114,7 @@ final class DisplaySession {
 
     func shutDown() async {
         captureTask?.cancel()
+        isCapturing = false
         await streamer.stop()
         display?.invalidate()
         display = nil

@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import Combine
+import UIKit
 
 /// Pairs with a host and then streams its screen.
 ///
@@ -23,13 +24,24 @@ final class HostConnection: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    /// What the Mac last said about itself. Drives the wake lock and the
+    /// overlay; starts optimistic because a host too old to say anything is
+    /// one that is running.
+    @Published private(set) var hostStatus: HostStatus = .awake
     @Published private(set) var image: CGImage?
     @Published private(set) var framesPerSecond: Double = 0
     @Published private(set) var megabitsPerSecond: Double = 0
 
     private let baseURL: URL
     private let hostID: String
-    private let session: URLSession
+    private let tlsFingerprint: String?
+    /// Recreated on every reconnect, not reused across the connection's whole
+    /// lifetime. URLSession caches TLS session tickets per instance, and a
+    /// ticket cut before the host last restarted is one the host's new process
+    /// no longer recognises - resuming it then fails the handshake the same
+    /// way every time, which is a wedged "trying to reconnect" that never
+    /// clears on its own rather than the one retry it should have taken.
+    private var session: URLSession
     private var trust: PinnedTrust?
     private var socket: URLSessionWebSocketTask?
     private let canvas = ScreenCanvas(size: CGSize(width: 1024, height: 768))
@@ -48,30 +60,48 @@ final class HostConnection: ObservableObject {
 
     private(set) var isEncrypted = false
 
+    private var wakeLock: AnyCancellable?
+
     init(baseURL: URL, hostID: String, tlsFingerprint: String? = nil) {
         self.baseURL = baseURL
         self.hostID = hostID
+        self.tlsFingerprint = tlsFingerprint
         self.isEncrypted = baseURL.scheme == "https"
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieAcceptPolicy = .always
-        configuration.httpShouldSetCookies = true
-        // A self-signed certificate is refused by the default trust evaluation,
-        // so the session is given a delegate that checks the fingerprint
-        // instead. Without a fingerprint there is nothing to check against and
-        // the connection stays plain.
-        if let tlsFingerprint, baseURL.scheme == "https" {
-            let pinned = PinnedTrust(fingerprint: tlsFingerprint)
-            self.trust = pinned
-            self.session = URLSession(configuration: configuration,
-                                      delegate: pinned, delegateQueue: nil)
-        } else {
-            self.session = URLSession(configuration: configuration)
-        }
+        let (session, trust) = Self.makeSession(baseURL: baseURL, tlsFingerprint: tlsFingerprint)
+        self.session = session
+        self.trust = trust
         restoreSavedPairing()
 
         video.onFrame = { [weak self] frame in
             Task { @MainActor in self?.present(frame) }
         }
+
+        // The iPad's own auto-lock is left alone except while there is
+        // something live on screen. Holding it off permanently is what forced
+        // Auto-Lock to Never, and that is how a locked Mac ended up with an
+        // iPad burning next to it all night.
+        wakeLock = Publishers.CombineLatest($state, $hostStatus)
+            .map { state, status in state == .streaming && status == .awake }
+            .removeDuplicates()
+            .sink { keepAwake in
+                UIApplication.shared.isIdleTimerDisabled = keepAwake
+            }
+    }
+
+    /// A self-signed certificate is refused by the default trust evaluation,
+    /// so the session is given a delegate that checks the fingerprint instead.
+    /// Without a fingerprint there is nothing to check against and the
+    /// connection stays plain.
+    private static func makeSession(baseURL: URL,
+                                    tlsFingerprint: String?) -> (URLSession, PinnedTrust?) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieAcceptPolicy = .always
+        configuration.httpShouldSetCookies = true
+        if let tlsFingerprint, baseURL.scheme == "https" {
+            let pinned = PinnedTrust(fingerprint: tlsFingerprint)
+            return (URLSession(configuration: configuration, delegate: pinned, delegateQueue: nil), pinned)
+        }
+        return (URLSession(configuration: configuration), nil)
     }
 
     @MainActor
@@ -161,6 +191,7 @@ final class HostConnection: ObservableObject {
 
     func stop() {
         wantsConnection = false
+        hostStatus = .awake
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         state = .idle
@@ -193,8 +224,10 @@ final class HostConnection: ObservableObject {
         // Ask for the best the host offers; it refuses anything it cannot
         // serve, so this cannot silently produce an unreadable stream.
         negotiatedVersion = hostProtocolVersion
-        components?.queryItems = [URLQueryItem(name: WireNames.versionQuery,
-                                               value: String(negotiatedVersion))]
+        components?.queryItems = [
+            URLQueryItem(name: WireNames.versionQuery, value: String(negotiatedVersion)),
+            URLQueryItem(name: WireNames.deviceNameQuery, value: UIDevice.current.name),
+        ]
         guard let url = components?.url else {
             state = .failed("Could not build the stream address.")
             return
@@ -214,7 +247,11 @@ final class HostConnection: ObservableObject {
                 guard let self else { return }
                 switch result {
                 case .success(let message):
-                    if case let .data(data) = message { self.handle(data) }
+                    switch message {
+                    case .data(let data): self.handle(data)
+                    case .string(let text): self.handle(text: text)
+                    @unknown default: break
+                    }
                     self.receive()
                 case .failure(let error):
                     guard self.socket != nil, self.wantsConnection else { return }
@@ -222,6 +259,18 @@ final class HostConnection: ObservableObject {
                 }
             }
         }
+    }
+
+    /// The host only ever says one thing in words: whether it is in use. An
+    /// unrecognised line is ignored rather than treated as an error, so a
+    /// future host can add another without breaking this version.
+    private func handle(text: String) {
+        guard let status = HostStatus.decode(text) else { return }
+        hostStatus = status
+        // The last frame was the Mac's screen. Leaving it up on an iPad while
+        // the Mac itself is locked shows exactly what the lock was hiding - so
+        // it goes, and the host sends a fresh keyframe when it comes back.
+        if status == .locked { image = nil }
     }
 
     private func handle(_ data: Data) {
@@ -272,6 +321,18 @@ final class HostConnection: ObservableObject {
         let delay = min(Double(reconnectAttempt) * 0.5, 5.0)
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         guard wantsConnection else { return }
+
+        // A fresh session for the retry, not the one that just failed: a
+        // URLSession keeps its TLS session tickets for as long as it lives,
+        // and a ticket cut before the host last restarted its process is one
+        // the new process will not recognise. Resuming it then fails the
+        // handshake identically on every attempt - stuck "reconnecting"
+        // rather than the one retry this should have taken. restoreSavedPairing
+        // puts the cookies back since the new session's jar starts empty.
+        let (freshSession, freshTrust) = Self.makeSession(baseURL: baseURL, tlsFingerprint: tlsFingerprint)
+        session = freshSession
+        trust = freshTrust
+        restoreSavedPairing()
 
         if await canReachScreen() {
             await openStream()

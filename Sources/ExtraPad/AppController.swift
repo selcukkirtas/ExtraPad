@@ -21,6 +21,14 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let statsBox = Atomic(DeltaEncoder.Stats())
     private var latestDeltaStats: DeltaEncoder.Stats { statsBox.value }
     private var retryTask: Task<Void, Never>?
+    /// Whether anybody is at the Mac. Capture, input and the iPads all follow
+    /// this.
+    private let presence = HostPresence()
+    private var isHostAwake = true
+    /// Whether the trial-expired pause is currently in effect, so the gate
+    /// only acts on actual transitions instead of re-pausing (and spamming
+    /// pauseCapture) every 2 seconds while it is already engaged.
+    private var licenseGateEngaged = false
 
     init(config: Config) {
         self.config = config
@@ -30,6 +38,13 @@ final class AppController: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
         retryTask = Task { await startPipeline() }
+        // Catches a revoked or refunded license. Not on every launch's
+        // critical path - the cached state from the last check is what
+        // `License.state` reads until this finishes.
+        Task { @MainActor in
+            _ = await License.refresh()
+            rebuildMenu()
+        }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 if self?.needsInputPermission == true, InputInjector.isPermitted {
@@ -38,12 +53,51 @@ final class AppController: NSObject, NSApplicationDelegate {
                 if let first = self?.sessions?.sessions.values.first {
                     self?.statsBox.store(first.streamer.deltaStats)
                 }
+                await self?.applyLicenseGate()
                 self?.rebuildMenu()
             }
         }
     }
 
+    /// The trial ending has to actually disconnect the displays already in
+    /// use, not just refuse new ones - this is the second half of that.
+    /// Without it, a Mac that is never restarted (exactly how ExtraPad is
+    /// meant to be used: on all the time, iPad permanently attached) keeps
+    /// every display it already created running forever, because nothing
+    /// ever asks it to reconnect from scratch.
+    ///
+    /// A hard disconnect rather than a frozen picture on purpose: a paused
+    /// stream that just stops updating reads as a bug, not as "you need a
+    /// license now". Checked on the same 2-second tick as everything else in
+    /// the menu, so a license entered elsewhere takes effect within a couple
+    /// of seconds rather than needing a relaunch.
+    private func applyLicenseGate() async {
+        guard !License.isUsable else {
+            // A deactivated-then-reactivated, or refunded-then-repurchased,
+            // license should be able to trip this again later - the flag
+            // only exists to stop every 2-second tick from redoing the
+            // teardown while expiry is already in effect.
+            licenseGateEngaged = false
+            return
+        }
+        guard !licenseGateEngaged else { return }
+        licenseGateEngaged = true
+
+        // `sessions.onSessionRemoved` (wired in startPipeline) already clears
+        // the registry entry and the input injector for each ID as it goes;
+        // the one thing shutting down a session does not do on its own is
+        // drop the live socket, since the session layer has no notion of
+        // connections - that part is this loop's job.
+        let expiredDeviceIDs = await sessions?.shutDownAllForExpiredTrial() ?? []
+        for deviceID in expiredDeviceIDs {
+            server?.disconnectClients(forDevice: deviceID)
+        }
+        statusLine = "not licensed - start a trial or enter a license to continue"
+        rebuildMenu()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        presence.stop()
         retryTask?.cancel()
         server?.stop()
         MainActor.assumeIsolated {
@@ -80,9 +134,30 @@ final class AppController: NSObject, NSApplicationDelegate {
         let server = MJPEGServer(config: config)
         // Creation is the only thing that needs the main actor; everything the
         // network queue reads comes from the registry, under a lock.
-        server.createSession = { [weak sessions, weak server] deviceID, size, completion in
+        server.createSession = { [weak self, weak sessions, weak server] deviceID, size, name, completion in
             Task { @MainActor in
-                guard let session = sessions?.session(for: deviceID, preferredSize: size) else {
+                // A device reconnecting to a display it already has is not a
+                // *new* display, so it stays allowed past trial expiry - only
+                // creating another one is gated. An expired trial should not
+                // cut off a screen someone is actively using.
+                let isReturning = sessions?.sessions[deviceID] != nil
+                guard isReturning || License.isUsable else {
+                    self?.statusLine = "not licensed - start a trial to add displays"
+                    self?.rebuildMenu()
+                    completion(nil)
+                    return
+                }
+                // The trial proves the product works; it doesn't need to prove
+                // it at full scale. One iPad is enough to decide "yes, I want
+                // this" - a houseful of them is the reason to actually buy it.
+                if !isReturning, case .trial = License.state, (sessions?.sessions.count ?? 0) >= 1 {
+                    self?.statusLine = "trial is limited to one iPad - buy a license to add more"
+                    self?.rebuildMenu()
+                    completion(nil)
+                    return
+                }
+                guard let session = sessions?.session(for: deviceID, preferredSize: size,
+                                                       deviceName: name) else {
                     completion(nil)
                     return
                 }
@@ -114,6 +189,16 @@ final class AppController: NSObject, NSApplicationDelegate {
             fail("Could not start the HTTP server on port \(config.port): \(error.localizedDescription)")
             return
         }
+
+        // From here on the Mac's own state drives the pipeline. Started after
+        // the server so the first status can go straight out to any client
+        // that is already connected - which happens on a relaunch.
+        presence.onChange = { [weak self] awake in
+            Task { @MainActor in await self?.presenceChanged(to: awake) }
+        }
+        presence.start()
+        isHostAwake = presence.isAwake
+        server.setHostStatus(isHostAwake ? .awake : .locked)
 
         if !CGPreflightScreenCaptureAccess() {
             needsScreenPermission = true
@@ -162,6 +247,11 @@ final class AppController: NSObject, NSApplicationDelegate {
                 injectors[session.id] = injector
                 server?.onInput = { [weak self] phase, x, y in
                     guard let phase = InputInjector.Phase(rawValue: phase) else { return }
+                    // A locked Mac takes no input. Clients stop sending touches
+                    // on their own, but an older one does not know to, and
+                    // driving the cursor behind a lock screen is exactly what a
+                    // lock is for preventing.
+                    guard self?.isHostAwake == true else { return }
                     // Input follows whichever display was most recently touched.
                     self?.injectors[session.id]?.handle(phase: phase, x: x, y: y)
                 }
@@ -170,12 +260,50 @@ final class AppController: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        guard isHostAwake else {
+            statusLine = "paused - this Mac is locked"
+            rebuildMenu()
+            return
+        }
         do {
             try await session.startCapture()
             statusLine = "\(sessions?.sessions.count ?? 1) display(s) active"
         } catch {
             needsScreenPermission = !CGPreflightScreenCaptureAccess()
             log("[ExtraPad] Could not start capture for \(session.id): \(error.localizedDescription)")
+        }
+        rebuildMenu()
+    }
+
+    /// The Mac was locked, slept, or came back.
+    ///
+    /// Everything downstream follows from here: capture stops so a locked Mac
+    /// is not streaming its screen anywhere, input is refused, and the clients
+    /// are told - which is the only way an iPad knows to stop holding its own
+    /// screen awake and go to sleep on its usual schedule.
+    private func presenceChanged(to awake: Bool) async {
+        isHostAwake = awake
+        server?.setHostStatus(awake ? .awake : .locked)
+
+        let sessions = self.sessions?.sessions.values.map { $0 } ?? []
+        if awake {
+            for session in sessions {
+                do {
+                    try await session.resumeCapture()
+                } catch {
+                    log("[ExtraPad] Could not resume capture for \(session.id): "
+                        + error.localizedDescription)
+                }
+            }
+            statusLine = sessions.isEmpty
+                ? "ready for displays"
+                : "\(sessions.count) display(s) active"
+        } else {
+            // A finger could have been down when the screen locked; left held,
+            // the Mac would wake up mid-drag.
+            injectors.values.forEach { $0.releaseIfHeld() }
+            for session in sessions { await session.pauseCapture() }
+            statusLine = "paused - this Mac is locked"
         }
         rebuildMenu()
     }
@@ -269,6 +397,49 @@ final class AppController: NSObject, NSApplicationDelegate {
         detail.isEnabled = false
         menu.addItem(detail)
 
+        menu.addItem(.separator())
+        switch License.state {
+        case .licensed:
+            let item = NSMenuItem(title: "Licensed ✓", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            let deactivate = NSMenuItem(title: "Deactivate license on this Mac...",
+                                        action: #selector(deactivateLicense), keyEquivalent: "")
+            deactivate.target = self
+            menu.addItem(deactivate)
+        case .trial(let daysLeft):
+            let item = NSMenuItem(
+                title: daysLeft == 1 ? "Trial: last day" : "Trial: \(daysLeft) days left",
+                action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            let enter = NSMenuItem(title: "Enter License Key...",
+                                   action: #selector(enterLicenseKey), keyEquivalent: "")
+            enter.target = self
+            menu.addItem(enter)
+            let buy = NSMenuItem(title: "Buy a License...",
+                                 action: #selector(openBuyLicense), keyEquivalent: "")
+            buy.target = self
+            menu.addItem(buy)
+        case .unlicensed:
+            let item = NSMenuItem(title: "Not licensed - displays are paused",
+                                  action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+            let trial = NSMenuItem(title: "Start 14-Day Free Trial...",
+                                   action: #selector(startTrial), keyEquivalent: "")
+            trial.target = self
+            menu.addItem(trial)
+            let enter = NSMenuItem(title: "Enter License Key...",
+                                   action: #selector(enterLicenseKey), keyEquivalent: "")
+            enter.target = self
+            menu.addItem(enter)
+            let buy = NSMenuItem(title: "Buy a License...",
+                                 action: #selector(openBuyLicense), keyEquivalent: "")
+            buy.target = self
+            menu.addItem(buy)
+        }
+
         if needsInputPermission {
             menu.addItem(.separator())
             let grant = NSMenuItem(title: "Open Accessibility settings for touch input...",
@@ -300,6 +471,12 @@ final class AppController: NSObject, NSApplicationDelegate {
                 item.target = self
                 item.representedObject = url
                 menu.addItem(item)
+
+                let airdrop = NSMenuItem(title: "   Share via AirDrop...",
+                                         action: #selector(shareURLViaAirDrop(_:)), keyEquivalent: "")
+                airdrop.target = self
+                airdrop.representedObject = url
+                menu.addItem(airdrop)
             }
         }
 
@@ -371,8 +548,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        let feedback = NSMenuItem(title: "Send Feedback...", action: #selector(openFeedback), keyEquivalent: "")
+        feedback.target = self
+        menu.addItem(feedback)
+
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
+    }
+
+    @objc private func openFeedback() {
+        NSWorkspace.shared.open(URL(string: "https://extrapad.com/feedback")!)
     }
 
     @objc private func toggleHUD() {
@@ -450,5 +636,110 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let url = sender.representedObject as? String else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url, forType: .string)
+    }
+
+    @objc private func shareURLViaAirDrop(_ sender: NSMenuItem) {
+        guard let urlString = sender.representedObject as? String,
+              let url = URL(string: urlString) else { return }
+        guard let service = NSSharingService(named: .sendViaAirDrop),
+              service.canPerform(withItems: [url]) else {
+            let alert = NSAlert()
+            alert.messageText = "AirDrop isn't available"
+            alert.informativeText = "Make sure Wi-Fi and Bluetooth are turned on, then try again."
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        service.perform(withItems: [url])
+    }
+
+    // MARK: - Licensing
+
+    @objc private func openBuyLicense() {
+        NSWorkspace.shared.open(License.buyURL)
+    }
+
+    /// A real LemonSqueezy checkout, just priced at $0 - it collects an
+    /// email the same way a purchase does, which is the whole reason the
+    /// trial lives here instead of in a UserDefaults timestamp.
+    @objc private func startTrial() {
+        NSWorkspace.shared.open(License.trialCheckoutURL)
+        let alert = NSAlert()
+        alert.messageText = "Check your email for the key"
+        alert.informativeText = "LemonSqueezy will email a 14-day license key once the checkout "
+            + "completes - no card needed. Come back here and choose \"Enter License Key...\" to "
+            + "activate it."
+        alert.runModal()
+    }
+
+    @objc private func enterLicenseKey() {
+        let alert = NSAlert()
+        alert.messageText = "Enter your license key"
+        alert.informativeText = "The key from your purchase email. This activates ExtraPad on this Mac."
+        alert.addButton(withTitle: "Activate")
+        alert.addButton(withTitle: "Cancel")
+
+        // Wide and monospaced: a 36-character key in the default proportional
+        // font at the old 280pt width overflowed the visible box, which read
+        // as "the paste got cut off" even though the field held the whole
+        // string fine.
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
+        field.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        field.placeholderString = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+        field.isEditable = true
+        field.isSelectable = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.lineBreakMode = .byClipping
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let key = field.stringValue
+        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+
+        statusLine = "activating license..."
+        rebuildMenu()
+        Task { @MainActor in
+            let result = await License.activate(key: key)
+            switch result {
+            case .success:
+                statusLine = "licensed"
+                rebuildMenu()
+                let done = NSAlert()
+                done.messageText = "License activated"
+                switch License.state {
+                case .trial(let daysLeft):
+                    done.informativeText = "Your trial is active - \(daysLeft) day\(daysLeft == 1 ? "" : "s") left. "
+                        + "Reconnect your iPads whenever you're ready."
+                default:
+                    done.informativeText = "ExtraPad is fully unlocked on this Mac. Reconnect your iPads whenever you're ready."
+                }
+                done.runModal()
+            case .failure(let error):
+                statusLine = "ready for displays"
+                rebuildMenu()
+                let failed = NSAlert()
+                failed.alertStyle = .warning
+                failed.messageText = "Could not activate"
+                failed.informativeText = error.localizedDescription
+                failed.runModal()
+            }
+        }
+    }
+
+    @objc private func deactivateLicense() {
+        let alert = NSAlert()
+        alert.messageText = "Deactivate this Mac's license?"
+        alert.informativeText = "You can activate it again here, or on a different Mac, any time "
+            + "with the same key."
+        alert.addButton(withTitle: "Deactivate")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        Task { @MainActor in
+            await License.deactivate()
+            rebuildMenu()
+        }
     }
 }

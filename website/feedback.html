@@ -1,0 +1,176 @@
+<title>ExtraPad Feedback</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink: #2b2420;
+    --ink-soft: #776b5d;
+    --paper: #f7f2e9;
+    --panel: #fffdf8;
+    --line: #e7ddc9;
+    --mac: #8a8071;
+    --accent: #c15b35;
+    --accent-ink: #fffaf3;
+    --accent-soft: #f6e3d6;
+    --good: #2f7d4f;
+
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    --font-body: "Source Sans 3", -apple-system, "Helvetica Neue", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+      --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+      --accent-soft: #3a261b; --good: #6fc98f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+    --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+    --accent-soft: #3a261b; --good: #6fc98f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--font-display); line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  h1 { text-wrap: balance; margin: 0; }
+  p { margin: 0; }
+
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 28px; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between; padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.05rem; text-decoration: none; }
+  .brand-mark { width: 26px; height: 20px; position: relative; flex: none; }
+  .brand-mark i { position: absolute; border-radius: 2px; }
+  .brand-mark .back { width: 20px; height: 14px; right: 0; top: 2px; background: var(--mac); }
+  .brand-mark .front { width: 16px; height: 12px; left: 0; bottom: 0; background: var(--accent); }
+  nav a.back-link { font-family: var(--font-mono); font-size: 0.82rem; color: var(--ink-soft); text-decoration: none; }
+  nav a.back-link:hover { color: var(--ink); }
+
+  main { padding: 64px 0 96px; }
+  .kicker {
+    font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 14px;
+  }
+  h1 { font-size: clamp(1.9rem, 4vw, 2.4rem); font-weight: 700; letter-spacing: -0.01em; }
+  .lede { margin-top: 14px; font-size: 1.02rem; color: var(--ink-soft); max-width: 56ch; }
+
+  form { margin-top: 40px; display: flex; flex-direction: column; gap: 22px; }
+
+  fieldset { border: none; margin: 0; padding: 0; }
+  legend {
+    font-family: var(--font-mono); font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ink-soft); font-weight: 600; margin-bottom: 10px; padding: 0;
+  }
+  .kind-group { display: flex; gap: 10px; flex-wrap: wrap; }
+  .kind-option {
+    position: relative;
+  }
+  .kind-option input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .kind-option label {
+    display: block; padding: 9px 16px; border: 1px solid var(--line); border-radius: 20px;
+    font-size: 0.86rem; color: var(--ink-soft); cursor: pointer;
+  }
+  .kind-option input:checked + label {
+    border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600;
+  }
+  .kind-option input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  label.field-label {
+    font-family: var(--font-mono); font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ink-soft); font-weight: 600; display: block; margin-bottom: 10px;
+  }
+  textarea, input[type="email"] {
+    width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--panel);
+    color: var(--ink); font-family: var(--font-display); font-size: 0.96rem; padding: 12px 14px;
+  }
+  textarea { min-height: 140px; resize: vertical; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { margin-top: 8px; font-size: 0.82rem; color: var(--ink-soft); }
+
+  button[type="submit"] {
+    font-family: var(--font-mono); font-size: 0.88rem; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink); border: none;
+    padding: 14px 24px; border-radius: 3px; cursor: pointer; align-self: flex-start;
+  }
+  button[type="submit"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .alt-contact {
+    margin-top: 48px; padding-top: 28px; border-top: 1px solid var(--line);
+    font-size: 0.88rem; color: var(--ink-soft);
+  }
+  .alt-contact strong { color: var(--ink); }
+</style>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><i class="back"></i><i class="front"></i></span>
+      ExtraPad
+    </a>
+    <a class="back-link" href="index.html">← Back to extrapad.com</a>
+  </nav>
+</div>
+
+<main class="wrap">
+  <div class="kicker">Feedback</div>
+  <h1>Tell us what's working, and what isn't.</h1>
+  <p class="lede">Bug reports, feature requests, or just how the trial went — short and specific helps most. We read every one of these.</p>
+
+  <!--
+    TODO: wire this form to a submission backend before shipping.
+    Set the <form> `action` to that endpoint (a form service, or a small
+    serverless function) and remove `onsubmit="return false"` below.
+  -->
+  <form onsubmit="return false;">
+    <fieldset>
+      <legend>What's this about</legend>
+      <div class="kind-group">
+        <div class="kind-option">
+          <input type="radio" name="kind" id="kind-bug" value="bug" checked>
+          <label for="kind-bug">Something's broken</label>
+        </div>
+        <div class="kind-option">
+          <input type="radio" name="kind" id="kind-feature" value="feature">
+          <label for="kind-feature">Feature idea</label>
+        </div>
+        <div class="kind-option">
+          <input type="radio" name="kind" id="kind-license" value="license">
+          <label for="kind-license">Licensing / purchase</label>
+        </div>
+        <div class="kind-option">
+          <input type="radio" name="kind" id="kind-other" value="other">
+          <label for="kind-other">Something else</label>
+        </div>
+      </div>
+    </fieldset>
+
+    <div>
+      <label class="field-label" for="message">What happened</label>
+      <textarea id="message" name="message" placeholder="What you were doing, what you expected, what happened instead." required></textarea>
+    </div>
+
+    <div>
+      <label class="field-label" for="email">Email (optional)</label>
+      <input type="email" id="email" name="email" placeholder="so we can follow up">
+      <p class="hint">Leave this blank to send anonymously — we just won't be able to reply.</p>
+    </div>
+
+    <button type="submit">Send feedback</button>
+  </form>
+
+  <div class="alt-contact">
+    <strong>Licensed and need a hand right now?</strong> Mention it's urgent in the message above — license and purchase issues get looked at first.
+  </div>
+</main>

@@ -113,6 +113,17 @@ enum WebClient {
     /// them onto a canvas. Still ES5 - and deliberately light on per-message
     /// JavaScript, because a home-screen web app on an iPad 2 may be running
     /// without a JIT. The decoding stays in Safari's native JPEG path.
+    /// Four seconds of silent 16x16 black, H.264 Constrained Baseline, looped
+    /// by the delta page to hold the iPad's screen awake.
+    ///
+    /// There is no honest way to do this: the Screen Wake Lock API is iOS
+    /// 16.4 and this client exists for iOS 9, which leaves "something is
+    /// playing" as the only state iOS has ever honoured. 1.5 KB, one frame a
+    /// second and a quarter of the pixels of an icon, because the iPad 2's
+    /// decoder is the bottleneck in the real stream and this must not take a
+    /// measurable share of it.
+    private static let keepAwakeVideoBase64 = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMybW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAD6AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAl10cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAD6AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAA+gAAAAAAABAAAAAAHVbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAABAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABgG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAUBzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFExhdmM2My4xLjEwMiBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAe/+EAFmdCwB7ZHsBEAAADAAQAAAMACDxYuSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAAVGAAAAAAAAABhzdHRzAAAAAAAAAAEAAAAEAABAAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAAEAAAAAQAAACRzdHN6AAAAAAAAAAAAAAAEAAAChgAAAAoAAAAKAAAACQAAABRzdGNvAAAAAAAAAAEAAANiAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2My4xLjEwMgAAAAhmcmVlAAACq21kYXQAAAJwBgX//2zcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIyIGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0xIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAADmWIhAX///8PRQABV5+AAAAABkGaOAv6gAAAAAZBmlQC3qAAAAAFQZpgFfU="
+
     static func deltaPage(width: Int, height: Int, protocolVersion: Int = WireProtocol.atlas) -> String {
         let html = #"""
 <!DOCTYPE html>
@@ -136,10 +147,38 @@ enum WebClient {
   #hud.hidden { opacity: 0; }
   #hud b { font-weight: 600; }
   #hud .dim { color: #9aa0a6; }
+  /* Shown while the Mac is locked. Opaque, not translucent: the frame
+     underneath is whatever was on the Mac's screen when it locked. */
+  #locked { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; background: #000; color: #fff; text-align: center;
+            font: 15px -apple-system, "Helvetica Neue", Helvetica, sans-serif; }
+  #locked.shown { display: block; }
+  #locked p { position: absolute; top: 45%; left: 0; right: 0; }
+  #locked .dim { display: block; margin-top: 8px; font-size: 13px; color: #9aa0a6; }
+  /* Visible but effectively invisible: iOS will not play a video it considers
+     hidden, and display:none or zero size counts as hidden. */
+  #awake { position: absolute; bottom: 0; left: 0; width: 1px; height: 1px;
+           opacity: 0.01; pointer-events: none; }
+  /* Asks for the one touch that lets the video start. Passes touches straight
+     through, so the tap that dismisses it is still a tap on the Mac. */
+  #tap { position: absolute; bottom: 24px; left: 0; right: 0; text-align: center;
+         pointer-events: none; transition: opacity .4s; }
+  #tap span { background: rgba(0,0,0,0.72); color: #fff; border-radius: 16px;
+              padding: 8px 14px;
+              font: 13px -apple-system, "Helvetica Neue", Helvetica, sans-serif; }
+  #tap.gone { opacity: 0; }
 </style>
 </head>
 <body>
   <canvas id="screen" width="__W__" height="__H__"></canvas>
+  <div id="locked"><p>This Mac is locked<span class="dim">The screen comes back
+    when you unlock it.</span></p></div>
+  <!-- See keepAwakeVideoBase64: this is the iPad's auto-lock switch, in the
+       only form a page this old is given one. Muted, looping, inline, and
+       playing only while there is something on screen worth looking at. -->
+  <video id="awake" loop muted playsinline webkit-playsinline preload="auto"
+         src="data:video/mp4;base64,__WAKEVIDEO__"></video>
+  <div id="tap"><span>Tap once to keep this screen awake</span></div>
   <div id="hud" class="hidden"><b>ExtraPad</b> <span class="dim" id="info">connecting&hellip;</span></div>
 <script>
 (function () {
@@ -148,6 +187,9 @@ enum WebClient {
   var ctx = canvas.getContext("2d");
   var hud = document.getElementById("hud");
   var info = document.getElementById("info");
+  var locked = document.getElementById("locked");
+  var awake = document.getElementById("awake");
+  var tapHint = document.getElementById("tap");
   var urlFactory = window.URL || window.webkitURL;
 
   var queue = [];
@@ -180,32 +222,41 @@ enum WebClient {
 
   // One decode per frame, then a synchronous blit per region. Regions must land
   // in the order they were produced, so exactly one decode is ever in flight.
+  //
+  // A single Image element is reused for every frame rather than allocated
+  // fresh each time: `drawing` already serialises access to it, and on an
+  // iPad 2 allocating a new Image (plus its load/error closures) tens of
+  // times a second is itself a measurable chunk of CPU with no JIT to hide it.
+  var pumpImg = new Image();
+  var pumpItem = null;
+  var pumpUrl = null;
+  var pumpStart = 0;
+  pumpImg.onload = function () {
+    var list = pumpItem.regions;
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      ctx.drawImage(pumpImg, 0, r.sy, r.w, r.h, r.dx, r.dy, r.w, r.h);
+    }
+    urlFactory.revokeObjectURL(pumpUrl);
+    decodeMs = decodeMs + (new Date().getTime() - pumpStart);
+    frames = frames + 1;
+    regions = regions + list.length;
+    drawing = false;
+    pump();
+  };
+  pumpImg.onerror = function () {
+    urlFactory.revokeObjectURL(pumpUrl);
+    drawing = false;
+    pump();
+  };
+
   function pump() {
     if (drawing || queue.length === 0) { return; }
     drawing = true;
-    var item = queue.shift();
-    var url = urlFactory.createObjectURL(item.blob);
-    var img = new Image();
-    var t0 = new Date().getTime();
-    img.onload = function () {
-      var list = item.regions;
-      for (var i = 0; i < list.length; i++) {
-        var r = list[i];
-        ctx.drawImage(img, 0, r.sy, r.w, r.h, r.dx, r.dy, r.w, r.h);
-      }
-      urlFactory.revokeObjectURL(url);
-      decodeMs = decodeMs + (new Date().getTime() - t0);
-      frames = frames + 1;
-      regions = regions + list.length;
-      drawing = false;
-      pump();
-    };
-    img.onerror = function () {
-      urlFactory.revokeObjectURL(url);
-      drawing = false;
-      pump();
-    };
-    img.src = url;
+    pumpItem = queue.shift();
+    pumpUrl = urlFactory.createObjectURL(pumpItem.blob);
+    pumpStart = new Date().getTime();
+    pumpImg.src = pumpUrl;
   }
 
   // A backlog is latency: what is queued is already stale. Throw it away and
@@ -214,6 +265,74 @@ enum WebClient {
   // This used to reconnect instead, which was a loop: reconnecting asked for a
   // keyframe, the keyframe was big enough to overrun the queue again, and that
   // reconnected. Asking over the open socket breaks the cycle.
+  // --- keeping the iPad awake ---------------------------------------------
+  //
+  // iOS has never let a page switch off auto-lock; what it has always honoured
+  // is a video playing. So one loops for exactly as long as there is something
+  // to look at, and stops the moment there is not - which is the whole point.
+  // Leaving it playing forever would be no better than setting Auto-Lock to
+  // Never, which is the problem this is here to remove.
+  var wantAwake = false;
+  var awakeUnlocked = false;
+
+  function applyWake() {
+    // Before the first touch iOS refuses to start playback at all, so there is
+    // nothing to apply yet.
+    if (!awakeUnlocked) { return; }
+    try {
+      if (wantAwake) {
+        if (awake.paused) { awake.play(); }
+      } else if (!awake.paused) {
+        awake.pause();
+      }
+    } catch (e) {
+      // A browser that refuses leaves the iPad exactly as it was before this
+      // existed. Nothing else here depends on it.
+    }
+  }
+
+  function keepAwake(on) {
+    if (on === wantAwake) { return; }
+    wantAwake = on;
+    applyWake();
+  }
+
+  // iOS starts playback only inside a user gesture, and a gesture does not
+  // survive the navigation that got us here - so the first touch on the screen
+  // is what arms this. It is the same touch that moves the Mac's cursor; the
+  // hint above it only says why one is needed.
+  function unlockWake() {
+    if (awakeUnlocked) { return; }
+    awakeUnlocked = true;
+    tapHint.className = "gone";
+    applyWake();
+  }
+  document.addEventListener("touchstart", unlockWake, false);
+  document.addEventListener("mousedown", unlockWake, false);
+
+  // "S locked" / "S awake". Unknown lines are ignored so a newer host can add
+  // one without breaking a page this old.
+  function hostSaid(text) {
+    if (text !== "S locked" && text !== "S awake") { return; }
+    var isLocked = (text === "S locked");
+    locked.className = isLocked ? "shown" : "";
+    // Only the stopping is done here. Starting again is left to the first
+    // frame that actually arrives, so the screen is never held awake for a
+    // host that said "awake" and then sent nothing.
+    // Nothing to stay awake for, so the hint goes too; it comes back with the
+    // picture if the screen was never tapped.
+    tapHint.className = (isLocked || awakeUnlocked) ? "gone" : "";
+    if (isLocked) {
+      keepAwake(false);
+      // Drop what is queued and clear the canvas: the host stopped capturing,
+      // so the next frame is a keyframe and nothing here is worth keeping.
+      queue = [];
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      info.innerHTML = "the Mac is locked";
+    }
+  }
+
   function overflow() {
     queue = [];
     if (ws && ws.readyState === 1) { ws.send("R"); }
@@ -247,6 +366,9 @@ enum WebClient {
 
     ws.onmessage = function (event) {
       var buf = event.data;
+      // The host says one thing in words rather than pixels: whether anybody
+      // is at the Mac. Everything else arriving here is a frame.
+      if (typeof buf === "string") { hostSaid(buf); return; }
       var view = new DataView(buf);
       var flags = view.getUint8(0);
       var isKey = flags & 1;
@@ -267,6 +389,7 @@ enum WebClient {
         off = off + 10;
       }
       bytes = bytes + buf.byteLength;
+      keepAwake(true);
 
       if (isKey) { queue = []; }
       queue.push({ regions: list,
@@ -278,6 +401,11 @@ enum WebClient {
 
     ws.onclose = function () {
       retries = retries + 1;
+      // The curtain comes down, but the screen is not held awake on a dead
+      // socket: a Mac that went to sleep takes its Wi-Fi with it, so this is
+      // the only signal that arrives in that case.
+      hostSaid("S awake");
+      keepAwake(false);
       info.innerHTML = "disconnected, retrying (" + retries + ")";
       if (retries === 2) { reloadIfStale(); }
       setTimeout(connect, Math.min(500 * retries, 5000));
@@ -354,6 +482,7 @@ enum WebClient {
             .replacingOccurrences(of: "__W__", with: String(width))
             .replacingOccurrences(of: "__H__", with: String(height))
             .replacingOccurrences(of: "__PROTO__", with: String(protocolVersion))
+            .replacingOccurrences(of: "__WAKEVIDEO__", with: keepAwakeVideoBase64)
     }
 
     /// Shown when the key is missing or wrong. Deliberately says nothing about

@@ -7,13 +7,17 @@ struct ScreenView: View {
     let hostName: String
     var onLeave: () -> Void
 
-    @State private var showOverlay = true
+    /// Starts hidden: the point of a second display is the picture, not a
+    /// status bar sitting on top of it. A double tap brings it back.
+    @State private var showOverlay = false
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
 
-            if let image = connection.image {
+            if connection.hostStatus == .locked {
+                lockedCurtain
+            } else if let image = connection.image {
                 GeometryReader { geometry in
                     Image(decorative: image, scale: 1)
                         .resizable()
@@ -31,6 +35,27 @@ struct ScreenView: View {
         }
         .statusBar(hidden: true)
         .onTapGesture(count: 2) { showOverlay.toggle() }
+    }
+
+    /// Covers the picture completely rather than dimming it. The whole point
+    /// of this screen is that it shows the Mac, and while the Mac is locked
+    /// that is the one thing it must not do - the last frame it received is
+    /// still whatever was open when the lock came down.
+    private var lockedCurtain: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "lock.fill").font(.system(size: 40))
+            Text("\(hostName) is locked")
+                .font(.headline)
+            Text("The screen comes back when you unlock the Mac. Until then this "
+                 + "iPad will dim and sleep on its own.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.white.opacity(0.6))
+                .frame(maxWidth: 320)
+        }
+        .foregroundColor(.white)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
     }
 
     private var overlay: some View {

@@ -1,0 +1,49 @@
+name: ExtraPadClient
+options:
+  bundleIdPrefix: dev.extrapad
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "15.0"
+
+targets:
+  ExtraPadClient:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: Sources/ExtraPadClient
+      - path: Sources/ExtraPadProtocol
+    settings:
+      base:
+        PRODUCT_NAME: ExtraPad
+        PRODUCT_BUNDLE_IDENTIFIER: dev.extrapad.client
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Generated/ExtraPadClient-Info.plist
+      properties:
+        CFBundleDisplayName: ExtraPad
+        UIDeviceFamily: [1, 2]
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Browsing for the Mac needs both of these, and iOS shows the user a
+        # prompt the first time. Without them the browser returns nothing and
+        # never explains why.
+        NSLocalNetworkUsageDescription: "ExtraPad looks for your Mac on this network so your iPad can become a second display."
+        NSBonjourServices:
+          - _extrapad._tcp
+
+schemes:
+  ExtraPadClient:
+    build:
+      targets:
+        ExtraPadClient: all
+    run:
+      config: Debug

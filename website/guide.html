@@ -1,0 +1,307 @@
+<title>ExtraPad Guide</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink: #2b2420; --ink-soft: #776b5d; --paper: #f7f2e9; --panel: #fffdf8;
+    --line: #e7ddc9; --mac: #8a8071; --accent: #c15b35; --accent-ink: #fffaf3;
+    --accent-soft: #f6e3d6; --good: #2f7d4f; --warn: #a15c00; --warn-soft: #f3e3d0;
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    --font-body: "Source Sans 3", -apple-system, "Helvetica Neue", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+      --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+      --accent-soft: #3a261b; --good: #6fc98f; --warn: #e8b454; --warn-soft: #2e2512;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+    --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+    --accent-soft: #3a261b; --good: #6fc98f; --warn: #e8b454; --warn-soft: #2e2512;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  h1, h2, h3 { text-wrap: balance; margin: 0; font-family: var(--font-display); font-weight: 500; }
+  p { margin: 0; }
+  code { font-family: var(--font-mono); background: var(--accent-soft); color: var(--accent); padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em; }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 28px; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.05rem; text-decoration: none; color: var(--ink); }
+  .brand-mark { width: 26px; height: 20px; position: relative; flex: none; }
+  .brand-mark i { position: absolute; border-radius: 2px; }
+  .brand-mark .back { width: 20px; height: 14px; right: 0; top: 2px; background: var(--mac); }
+  .brand-mark .front { width: 16px; height: 12px; left: 0; bottom: 0; background: var(--accent); }
+  nav a.back-link { font-family: var(--font-mono); font-size: 0.82rem; color: var(--ink-soft); text-decoration: none; }
+  nav a.back-link:hover { color: var(--ink); }
+
+  header.hero { padding: 56px 0 8px; }
+  .kicker { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 14px; }
+  h1 { font-size: clamp(1.9rem, 4vw, 2.3rem); font-weight: 700; letter-spacing: -0.01em; }
+  .lede { margin-top: 14px; font-size: 1.02rem; color: var(--ink-soft); max-width: 58ch; }
+
+  .toc { margin: 36px 0 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+  .toc p { font-family: var(--font-mono); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); font-weight: 600; margin-bottom: 10px; }
+  .toc ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; }
+  .toc a { text-decoration: none; color: var(--ink); font-size: 0.94rem; }
+  .toc a:hover { color: var(--accent); }
+
+  main { padding: 20px 0 100px; }
+  section { padding: 56px 0 0; scroll-margin-top: 20px; }
+  section h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  section > p.intro { margin-top: 12px; color: var(--ink-soft); max-width: 60ch; }
+
+  .steps { margin-top: 28px; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+  .step { display: grid; grid-template-columns: 44px 1fr; gap: 18px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .step .num { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+  .step h3 { font-size: 1.02rem; font-weight: 600; }
+  .step p { margin-top: 8px; font-size: 0.94rem; color: var(--ink-soft); }
+  .step .shot {
+    margin-top: 12px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-soft);
+    background: var(--paper); border: 1px dashed var(--line); border-radius: 6px; padding: 10px 14px;
+  }
+
+  .path-group { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .path { border: 1px solid var(--line); border-radius: 8px; padding: 20px; background: var(--panel); }
+  .path .tag { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 600; }
+  .path h3 { margin-top: 10px; font-size: 1rem; font-weight: 600; }
+  .path p { margin-top: 8px; font-size: 0.9rem; color: var(--ink-soft); }
+
+  .callout { margin-top: 24px; display: flex; gap: 14px; padding: 16px 18px; border-radius: 8px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+  .callout.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+  .callout .mark { font-family: var(--font-mono); font-weight: 700; color: var(--accent); flex: none; }
+  .callout.warn .mark { color: var(--warn); }
+  .callout p { font-size: 0.9rem; color: var(--ink); }
+
+  .faq-item { border-bottom: 1px solid var(--line); padding: 20px 0; }
+  .faq-item:first-of-type { border-top: 1px solid var(--line); margin-top: 28px; }
+  .faq-item summary { cursor: pointer; font-weight: 600; font-size: 0.98rem; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; color: var(--ink); }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary::after { content: "+"; font-family: var(--font-mono); color: var(--accent); font-size: 1.2rem; flex: none; }
+  .faq-item[open] summary::after { content: "–"; }
+  .faq-item p { margin-top: 12px; font-size: 0.92rem; color: var(--ink-soft); max-width: 62ch; }
+
+  footer { border-top: 1px solid var(--line); padding: 36px 0; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  footer .fine { font-size: 0.82rem; color: var(--ink-soft); font-family: var(--font-mono); }
+  footer a { color: var(--ink-soft); text-decoration: none; font-size: 0.88rem; }
+
+  @media (max-width: 640px) {
+    .path-group { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 32px 1fr; }
+  }
+</style>
+
+<div class="wrap">
+  <nav>
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><i class="back"></i><i class="front"></i></span>
+      ExtraPad
+    </a>
+    <a class="back-link" href="index.html">← Back to extrapad.app</a>
+  </nav>
+</div>
+
+<header class="hero wrap">
+  <div class="kicker">Guide</div>
+  <h1>Setting up ExtraPad, start to finish.</h1>
+  <p class="lede">Everything from installing it on your Mac to troubleshooting a device that won't connect.</p>
+
+  <div class="toc">
+    <p>On this page</p>
+    <ol>
+      <li><a href="#mac-setup">Set up the Mac</a></li>
+      <li><a href="#connect-ipad">Connect an iPad</a></li>
+      <li><a href="#use-it">Use it as a display</a></li>
+      <li><a href="#license">Trials and licenses</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ol>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="mac-setup">
+    <h2>1. Set up the Mac</h2>
+    <p class="intro">ExtraPad runs quietly in the menu bar. It needs two permissions to work — both are one-time, standard macOS prompts.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div>
+          <h3>Open ExtraPad</h3>
+          <p>It adds a small icon to your menu bar and starts immediately — there's no window to set up.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div>
+          <h3>Grant Screen Recording</h3>
+          <p>macOS asks for this the first time ExtraPad tries to capture a display. Without it, the menu shows <code>Screen Recording permission required</code> and nothing streams.</p>
+          <div class="shot">System Settings → Privacy &amp; Security → Screen Recording → turn on ExtraPad</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div>
+          <h3>Grant Accessibility</h3>
+          <p>This is what lets a touch on the iPad move your Mac's cursor. Skip it if you only want to view the screen, not control it.</p>
+          <div class="shot">System Settings → Privacy &amp; Security → Accessibility → turn on ExtraPad</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <div>
+          <h3>Note the address and code</h3>
+          <p>Click the menu bar icon — it shows the address to open on the iPad, and a six-digit pairing code underneath.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <span class="mark">!</span>
+      <p>Launched it and the menu still says <code>Screen Recording permission required</code> after granting it? Quit ExtraPad fully (menu → Quit) and open it again — macOS only re-checks the permission for a fresh launch.</p>
+    </div>
+  </section>
+
+  <section id="connect-ipad">
+    <h2>2. Connect an iPad</h2>
+    <p class="intro">Which path you use depends on the iPad, not on anything you choose.</p>
+
+    <div class="path-group">
+      <div class="path">
+        <div class="tag">iOS 15 and newer</div>
+        <h3>Native app</h3>
+        <p>Open the ExtraPad app. It finds Macs on the network on its own — tap the one you want, enter the six-digit code once, and it remembers this Mac from then on.</p>
+      </div>
+      <div class="path">
+        <div class="tag">iOS 9 – 14</div>
+        <h3>Safari</h3>
+        <p>Type the address shown in the Mac's menu bar into Safari. Enter the code when asked. Use Share → Add to Home Screen to get an icon for it afterward.</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="mark">i</span>
+      <p>The code only has to be entered once per iPad. After that, both the native app and the Safari shortcut reconnect on their own whenever the Mac is reachable.</p>
+    </div>
+  </section>
+
+  <section id="use-it">
+    <h2>3. Use it as a display</h2>
+    <p class="intro">Once connected, the iPad shows up as an ordinary monitor.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div>
+          <h3>Find it in Displays</h3>
+          <p>System Settings → Displays lists it alongside your other monitors, named after the iPad that's using it.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div>
+          <h3>Drag a window over</h3>
+          <p>Treat it exactly like a second monitor — position it in Displays, drag windows on and off it.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div>
+          <h3>Touch to control</h3>
+          <p>One finger on the iPad moves the Mac's cursor. On the native app, double-tap to show or hide the small status bar at the top.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="license">
+    <h2>4. Trials and licenses</h2>
+    <p class="intro">ExtraPad's menu bar icon always shows where you stand — <code>Trial: N days left</code>, <code>Licensed ✓</code>, or <code>Not licensed</code>.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div>
+          <h3>Start a trial</h3>
+          <p>Menu → <strong>Start 14-Day Free Trial…</strong> opens a free checkout — no card needed. The key arrives by email; paste it into <strong>Enter License Key…</strong> to activate.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div>
+          <h3>Buy a license</h3>
+          <p>Menu → <strong>Buy a License…</strong> for the $19 lifetime license. Same activation step as the trial, just a key that never expires.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div>
+          <h3>Move it to a new Mac</h3>
+          <p>A license runs on one Mac at a time. Activating it on a new one deactivates the old automatically — or use Menu → <strong>Deactivate license on this Mac…</strong> first if you'd rather do it by hand.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <div>
+          <h3>Lost the key?</h3>
+          <p>Look up your order with the email you purchased with on <a href="https://rainborealis.lemonsqueezy.com" target="_blank" rel="noopener">your LemonSqueezy order page</a> — it's shown there regardless of whether you still have the original email.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="troubleshooting">
+    <h2>5. Troubleshooting</h2>
+
+    <details class="faq-item">
+      <summary>The iPad app says "Nothing found yet"</summary>
+      <p>This almost always means ExtraPad isn't actually open on a Mac on the same network yet — check the menu bar. If it is open, confirm both devices are on the same Wi-Fi network, not one of them on cellular or a guest network.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Safari asks for the code again on every visit</summary>
+      <p>The code is remembered through a cookie. If Safari's "Prevent Cross-Site Tracking" or a content blocker is clearing it, add the ExtraPad page as an exception, or use Add to Home Screen — that shortcut keeps its own storage.</p>
+    </details>
+    <details class="faq-item">
+      <summary>"A TLS error caused the secure connection to fail"</summary>
+      <p>This clears itself on the next automatic reconnect attempt in almost every case - the app retries with a fresh connection a few seconds later. If it's still showing after a minute, quit and reopen the iPad app.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Touch moves the cursor on the wrong display</summary>
+      <p>Input follows whichever iPad touched the screen most recently. If two iPads are connected, the one you're not touching simply won't move the cursor until you touch it instead - that's expected, not a bug.</p>
+    </details>
+    <details class="faq-item">
+      <summary>The picture is there but touch does nothing</summary>
+      <p>Accessibility permission either wasn't granted or was granted before a restart that's needed to take effect. Check System Settings → Privacy &amp; Security → Accessibility, then quit and reopen ExtraPad.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Displays stopped working after the trial</summary>
+      <p>Expected - every connected iPad disconnects when the trial or license lapses. Start a new trial or enter a license key from the menu bar and reconnect; nothing about your setup is lost.</p>
+    </details>
+
+    <div class="callout">
+      <span class="mark">i</span>
+      <p>Still stuck? <a href="feedback.html">Send feedback</a> with what you were doing and what happened instead — that's more useful to us than "it doesn't work."</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="index.html" style="color: var(--ink);">
+      <span class="brand-mark"><i class="back"></i><i class="front"></i></span>
+      ExtraPad
+    </a>
+    <div style="display: flex; gap: 20px; align-items: center;">
+      <a href="feedback.html">Feedback</a>
+      <span class="fine">macOS 14+ · built for the iPad you still have</span>
+    </div>
+  </div>
+</footer>

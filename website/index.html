@@ -1,0 +1,387 @@
+<title>ExtraPad</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --ink: #2b2420;
+    --ink-soft: #776b5d;
+    --paper: #f7f2e9;
+    --panel: #fffdf8;
+    --line: #e7ddc9;
+    --mac: #8a8071;
+    --accent: #c15b35;
+    --accent-ink: #fffaf3;
+    --accent-soft: #f6e3d6;
+    --good: #2f7d4f;
+    --good-soft: #e3f0e6;
+
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    --font-body: "Source Sans 3", -apple-system, "Helvetica Neue", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+      --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+      --accent-soft: #3a261b; --good: #6fc98f; --good-soft: #1d2f22;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #efe7da; --ink-soft: #b6aa99; --paper: #211c17; --panel: #2a241d;
+    --line: #3c352a; --mac: #a89d8a; --accent: #e3794f; --accent-ink: #241309;
+    --accent-soft: #3a261b; --good: #6fc98f; --good-soft: #1d2f22;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--font-body); line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  h1, h2, h3 { text-wrap: balance; margin: 0; font-family: var(--font-display); font-weight: 500; }
+  p { margin: 0; }
+  img, svg { display: block; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- nav ---------- */
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 26px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; text-decoration: none; color: var(--ink); }
+  .brand-mark { width: 26px; height: 20px; position: relative; flex: none; }
+  .brand-mark i { position: absolute; border-radius: 3px; }
+  .brand-mark .back { width: 20px; height: 14px; right: 0; top: 2px; background: var(--mac); }
+  .brand-mark .front { width: 16px; height: 12px; left: 0; bottom: 0; background: var(--accent); }
+  nav .links { display: flex; gap: 30px; font-size: 0.94rem; color: var(--ink-soft); }
+  nav .links a { text-decoration: none; }
+  nav .links a:hover { color: var(--ink); }
+  nav .cta {
+    font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink);
+    padding: 10px 18px; border-radius: 20px; text-decoration: none;
+  }
+
+  /* ---------- hero ---------- */
+  .hero { position: relative; padding: 48px 0 80px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 22px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+  .hero h1 {
+    font-size: clamp(2.5rem, 5.4vw, 3.7rem); font-weight: 500; letter-spacing: -0.01em;
+    max-width: 15ch; line-height: 1.12;
+  }
+  .hero .sub {
+    margin-top: 24px; max-width: 46ch; font-size: 1.18rem; color: var(--ink-soft); line-height: 1.55;
+  }
+  .hero-ctas { display: flex; gap: 14px; margin-top: 34px; align-items: center; flex-wrap: wrap; }
+  .btn-primary, .btn-secondary {
+    font-family: var(--font-body); font-size: 0.94rem; font-weight: 600;
+    padding: 14px 24px; border-radius: 24px; text-decoration: none; display: inline-block;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-secondary { border: 1px solid var(--line); color: var(--ink); background: var(--panel); }
+  .hero-note { margin-top: 16px; font-size: 0.88rem; color: var(--ink-soft); }
+
+  /* hero display illustration - a soft framed "gallery" card, Kivo-style */
+  .stage {
+    position: relative; margin-top: 56px; padding: 36px 40px 40px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+    box-shadow: 0 30px 60px -36px rgba(43, 36, 32, 0.35);
+  }
+  .stage-row { position: relative; height: 260px; }
+  .screen {
+    position: absolute; border-radius: 14px; border: 1px solid var(--line);
+    background: var(--paper); overflow: hidden;
+  }
+  .screen .bar { height: 28px; background: color-mix(in srgb, var(--mac) 12%, var(--panel)); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 6px; padding: 0 12px; }
+  .screen .bar i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .screen-mac { left: 0; top: 24px; width: 58%; height: 230px; }
+  .screen-mac .body { padding: 18px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; }
+  .screen-mac .body div { height: 24px; border-radius: 6px; background: color-mix(in srgb, var(--mac) 14%, var(--paper)); }
+  .screen-mac .body div:nth-child(3n) { background: var(--accent-soft); }
+  .screen-ipad {
+    right: 0; top: 0; width: 44%; height: 204px; transform: rotate(1deg);
+    border-color: var(--accent); background: var(--panel);
+    box-shadow: 0 16px 34px -18px rgba(43, 36, 32, 0.3);
+  }
+  .screen-ipad .bar { background: var(--accent-soft); }
+  .screen-ipad .body { padding: 18px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; }
+  .screen-ipad .body div { height: 24px; border-radius: 6px; background: var(--accent-soft); }
+  .screen-ipad .body div:nth-child(2) { background: color-mix(in srgb, var(--mac) 16%, var(--panel)); }
+  .link-readout {
+    position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%);
+    font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft);
+    background: var(--panel); padding: 6px 14px; border: 1px solid var(--line); border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  /* ---------- trust bar ---------- */
+  .trust { background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .trust .wrap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; padding: 36px 28px; }
+  .trust-item { display: flex; gap: 14px; }
+  .trust-item .mark {
+    flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--good-soft); color: var(--good);
+    display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 700; font-size: 0.78rem;
+  }
+  .trust-item p { font-size: 0.92rem; color: var(--ink-soft); padding-top: 2px; }
+  .trust-item strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { padding: 90px 0; }
+  .kicker {
+    font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 16px;
+  }
+  h2 { font-size: clamp(1.8rem, 3vw, 2.3rem); font-weight: 500; letter-spacing: -0.005em; max-width: 20ch; }
+  .lede { margin-top: 16px; font-size: 1.05rem; color: var(--ink-soft); max-width: 58ch; }
+
+  /* how it works */
+  .steps { margin-top: 50px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 28px 26px; }
+  .step .n { font-family: var(--font-mono); color: var(--accent); font-size: 0.78rem; font-weight: 600; }
+  .step h3 { margin-top: 14px; font-size: 1.1rem; font-weight: 600; font-family: var(--font-display); }
+  .step p { margin-top: 10px; font-size: 0.93rem; color: var(--ink-soft); }
+
+  /* features */
+  .features { margin-top: 50px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .feature { border: 1px solid var(--line); border-radius: 16px; padding: 24px; background: var(--panel); }
+  .feature h3 { font-size: 1.05rem; font-weight: 600; font-family: var(--font-display); }
+  .feature p { margin-top: 10px; font-size: 0.9rem; color: var(--ink-soft); }
+  .feature .glyph {
+    width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; margin-bottom: 16px;
+  }
+
+  /* pricing */
+  .pricing-wrap { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: start; margin-top: 50px; }
+  .price-card { border: 1px solid var(--line); border-radius: 20px; background: var(--panel); padding: 36px; }
+  .price-card .plan { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+  .price-card .amount { margin-top: 12px; font-size: 3rem; font-weight: 500; font-family: var(--font-display); letter-spacing: -0.01em; }
+  .price-card .amount span { font-size: 1.05rem; color: var(--ink-soft); font-weight: 400; font-family: var(--font-body); }
+  .price-card .trial { margin-top: 8px; font-size: 0.9rem; color: var(--good); font-weight: 600; }
+  .price-list { margin: 28px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 13px; }
+  .price-list li { display: flex; gap: 11px; font-size: 0.94rem; }
+  .price-list li .ok {
+    flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--good-soft); color: var(--good);
+    display: flex; align-items: center; justify-content: center; font-size: 0.7rem; margin-top: 1px;
+  }
+  .price-card .cta { margin-top: 30px; display: block; text-align: center; }
+  .host-note { margin-top: 44px; }
+  .host-note h3 { font-size: 1.05rem; font-weight: 600; font-family: var(--font-display); }
+  .host-note p { margin-top: 10px; font-size: 0.93rem; color: var(--ink-soft); }
+  .host-note + .host-note { margin-top: 28px; }
+
+  /* faq */
+  .faq { margin-top: 50px; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .faq-item { border-bottom: 1px solid var(--line); padding: 24px 0; }
+  .faq-item summary { cursor: pointer; font-weight: 600; font-size: 1.02rem; font-family: var(--font-display); list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary::after { content: "+"; font-family: var(--font-mono); color: var(--accent); font-size: 1.2rem; flex: none; }
+  .faq-item[open] summary::after { content: "–"; }
+  .faq-item p { margin-top: 14px; font-size: 0.93rem; color: var(--ink-soft); max-width: 62ch; }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line); padding: 40px 0; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  footer .fine { font-size: 0.84rem; color: var(--ink-soft); }
+  footer a.sub { color: var(--ink-soft); text-decoration: none; font-size: 0.92rem; }
+
+  @media (max-width: 760px) {
+    .trust .wrap, .steps, .features, .pricing-wrap { grid-template-columns: 1fr; }
+    .stage-row { height: auto; padding-bottom: 20px; }
+    .screen-mac, .screen-ipad { position: static; width: 100%; margin-bottom: 18px; transform: none; }
+    .link-readout { display: none; }
+  }
+</style>
+
+<div class="hero">
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="#">
+        <span class="brand-mark"><i class="back"></i><i class="front"></i></span>
+        ExtraPad
+      </a>
+      <div class="links">
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="guide.html">Guide</a>
+        <a href="feedback.html">Feedback</a>
+      </div>
+      <a class="cta" href="#pricing">Download — free for 14 days</a>
+    </nav>
+
+    <div class="eyebrow"><span class="dot"></span>Runs entirely on your own network</div>
+    <h1>Turn any iPad into a wireless second display for your Mac.</h1>
+    <p class="sub">Drag a window onto it like any other monitor. Works on an iPad 2 from 2011 just as well as this year's model — nothing to install on the iPad itself.</p>
+
+    <div class="hero-ctas">
+      <a class="btn-primary" href="#pricing">Try it free for 14 days</a>
+      <a class="btn-secondary" href="#how">See how it connects</a>
+    </div>
+    <p class="hero-note">Just an email to start — no card. $19 once, keep it forever, if you decide to.</p>
+
+    <div class="stage">
+      <div class="stage-row">
+        <div class="screen screen-mac">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+        </div>
+        <div class="screen screen-ipad">
+          <div class="bar"><i></i><i></i><i></i></div>
+          <div class="body"><div></div><div></div><div></div><div></div><div></div><div></div></div>
+        </div>
+      </div>
+      <div class="link-readout">● streaming · 24 fps</div>
+    </div>
+  </div>
+</div>
+
+<div class="trust">
+  <div class="wrap">
+    <div class="trust-item">
+      <span class="mark">1</span>
+      <p><strong>Nothing leaves your Mac.</strong> The picture goes straight to the iPad over your own Wi-Fi. No cloud relay, no account required to use it.</p>
+    </div>
+    <div class="trust-item">
+      <span class="mark">2</span>
+      <p><strong>Encrypted when the iPad supports it.</strong> Newer iPads connect over TLS with a pinned certificate; older ones fall back to a plain local connection, same as any other device on your network.</p>
+    </div>
+    <div class="trust-item">
+      <span class="mark">3</span>
+      <p><strong>You approve every device.</strong> A six-digit code pairs each iPad once. Nothing connects to your screen without you typing it in.</p>
+    </div>
+  </div>
+</div>
+
+<section id="how" class="wrap">
+  <div class="kicker">How it works</div>
+  <h2>Three steps, no cables.</h2>
+  <p class="lede">ExtraPad creates a real virtual display on your Mac the moment an iPad connects — it shows up in System Settings like any monitor, sized for whichever iPad asked for it.</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="n">1 — Open ExtraPad</div>
+      <h3>It lives in your menu bar</h3>
+      <p>Launch it and it shows the address to open — on newer iPads, the app finds your Mac on its own over the network.</p>
+    </div>
+    <div class="step">
+      <div class="n">2 — Enter the code</div>
+      <h3>Six digits, once per device</h3>
+      <p>Type the code shown in the menu bar. From then on, that iPad reconnects on its own — no code, no cable.</p>
+    </div>
+    <div class="step">
+      <div class="n">3 — Drag a window over</div>
+      <h3>It's a monitor now</h3>
+      <p>macOS treats it exactly like an attached display. Touch the iPad to move the Mac's cursor there too.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="kicker">Built for the iPad you already own</div>
+  <h2>Old hardware, full speed.</h2>
+  <p class="lede">Newer iPads get a native app with hardware H.264 decoding. Anything running iOS 9 and up — down to a 2011 iPad 2 — gets the same picture through Safari, no install required.</p>
+
+  <div class="features">
+    <div class="feature">
+      <div class="glyph">01</div>
+      <h3>Only what changed, sent</h3>
+      <p>The Mac compares each frame tile by tile and streams just the rectangles that moved — a cursor blink costs almost nothing.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph">02</div>
+      <h3>Sized for the iPad that asked</h3>
+      <p>Each iPad gets its own virtual display at its own resolution. A Retina mini and an old 9.7" iPad never have to share one.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph">03</div>
+      <h3>Sleeps when you walk away</h3>
+      <p>Lock your Mac and every connected iPad is told to stop — no screen burning away next to an idle laptop.</p>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="wrap">
+  <div class="kicker">Pricing</div>
+  <h2>Try it properly. Buy it once.</h2>
+  <p class="lede">Fourteen days on one iPad — enough to actually use it as your second monitor, not just glance at it.</p>
+
+  <div class="pricing-wrap">
+    <div class="price-card">
+      <div class="plan">Lifetime license</div>
+      <div class="amount">$19 <span>once</span></div>
+      <div class="trial">14 days free on 1 iPad, no card required to start</div>
+      <ul class="price-list">
+        <li><span class="ok">✓</span> Every feature, no tiers above this one</li>
+        <li><span class="ok">✓</span> Up to 4 iPads connected at once</li>
+        <li><span class="ok">✓</span> All future updates, for as long as you use it</li>
+        <li><span class="ok">✓</span> Lost your license? Recover it with the email you bought it with</li>
+      </ul>
+      <a class="btn-primary price-card-cta cta" style="width: 100%; text-align: center;" href="#">Start your free trial</a>
+    </div>
+
+    <div>
+      <div class="host-note">
+        <h3>One license, one Mac at a time</h3>
+        <p>A license activates on a single Mac. Setting it up on a new one — a replacement, a second machine — deactivates the old one automatically; nothing to request, nothing to wait on.</p>
+      </div>
+      <div class="host-note">
+        <h3>Up to 4 iPads on that Mac</h3>
+        <p>The trial is limited to one iPad, so you can try it properly before deciding. A license lifts that to four at once — each one gets its own display, sized for it.</p>
+      </div>
+      <div class="host-note">
+        <h3>Reinstalling, or got a new Mac?</h3>
+        <p>Enter the email you purchased with and ExtraPad looks up your license for you — no digging through old receipts.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="wrap">
+  <div class="kicker">Questions</div>
+  <h2>Before you ask in email</h2>
+
+  <div class="faq">
+    <details class="faq-item">
+      <summary>Which iPads does this work on?</summary>
+      <p>Anything from the iPad 2 (2011) onward. iPads on iOS 15 or later get the native app with hardware video decoding; anything older connects through Safari instead — same display, a slightly simpler picture.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Does my Mac's screen content go anywhere outside my network?</summary>
+      <p>No. The stream goes directly from your Mac to the iPad over Wi-Fi. There's no server in between, and ExtraPad has no cloud component at all — only the license check talks to the internet, once, at activation.</p>
+    </details>
+    <details class="faq-item">
+      <summary>What does ExtraPad need permission for?</summary>
+      <p>Screen Recording, to capture the virtual display, and Accessibility, so touches on the iPad can move your Mac's cursor. Both are standard macOS prompts you'll see the first time you launch it; input control can be turned off entirely if you only want to view.</p>
+    </details>
+    <details class="faq-item">
+      <summary>Can I move my license to a different Mac myself?</summary>
+      <p>Yes — activating ExtraPad on a new Mac deactivates the previous one in the same step. You don't need to find or reach the old machine first.</p>
+    </details>
+    <details class="faq-item">
+      <summary>What happens when the trial ends?</summary>
+      <p>Every connected iPad is disconnected until you enter a license — nothing is deleted or left half-working. Buy a license whenever you're ready and every display comes right back.</p>
+    </details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#">
+      <span class="brand-mark"><i class="back"></i><i class="front"></i></span>
+      ExtraPad
+    </a>
+    <div style="display: flex; gap: 22px; align-items: center;">
+      <a class="sub" href="guide.html">Guide</a>
+      <a class="sub" href="feedback.html">Feedback</a>
+      <span class="fine">macOS 14+ · built for the iPad you still have</span>
+    </div>
+  </div>
+</footer>

@@ -40,5 +40,39 @@ public enum WireNames {
     public static let deviceCookie = "extrapad_device"
     public static let keyQuery = "k"
     public static let versionQuery = "v"
+    /// The device's own name (`UIDevice.current.name`), sent by the native
+    /// client so the virtual display it gets can say "iPad Air" instead of
+    /// a slot number. The web client has no reliable equivalent - Safari's
+    /// user agent does not distinguish iPad models - so this stays unset
+    /// for it and the display falls back to its slot name.
+    public static let deviceNameQuery = "name"
     public static let bonjourServiceType = "_extrapad._tcp"
+}
+
+/// Whether the Mac is actually in use, pushed to clients as it changes.
+///
+/// This exists because an iPad used as a second display has to be told to stop
+/// being one. The client holds the iPad's screen awake for as long as frames
+/// are worth looking at, and without a signal from the host "worth looking at"
+/// never becomes false: the Mac gets locked, its owner walks away, and the iPad
+/// sits there lit up all night showing the last frame it received.
+///
+/// Sent as a WebSocket text frame rather than inside the frame payload, because
+/// the two formats carry nothing in common and a locked Mac has stopped
+/// producing frames to piggyback on - which is exactly when this has to arrive.
+public enum HostStatus: String {
+    /// Somebody is at the Mac; keep the iPad's screen alive.
+    case awake
+    /// Locked, asleep, or the displays went dark. Nothing is being captured,
+    /// and the client should let the iPad sleep on its own schedule.
+    case locked
+
+    private static let prefix = "S "
+
+    public var wireText: String { Self.prefix + rawValue }
+
+    public static func decode(_ text: String) -> HostStatus? {
+        guard text.hasPrefix(prefix) else { return nil }
+        return HostStatus(rawValue: String(text.dropFirst(prefix.count)))
+    }
 }

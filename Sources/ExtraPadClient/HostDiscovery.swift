@@ -28,6 +28,10 @@ final class HostDiscovery: ObservableObject {
     @Published private(set) var hosts: [DiscoveredHost] = []
     @Published private(set) var isSearching = false
     @Published private(set) var permissionLikelyDenied = false
+    /// Nothing showed up for a while. The likeliest reason isn't a network
+    /// problem at all - it's that nobody has opened ExtraPad on a Mac on this
+    /// network yet, which a bare "still looking" spinner never explains.
+    @Published private(set) var macAppLikelyMissing = false
 
     private var browser: NWBrowser?
     private var sawAnyUpdate = false
@@ -64,16 +68,28 @@ final class HostDiscovery: ObservableObject {
             try? await Task.sleep(nanoseconds: 8_000_000_000)
             if !self.sawAnyUpdate { self.permissionLikelyDenied = true }
         }
+        // Longer, and checked against the actual list rather than "did the
+        // browser ever callback": permission being fine and the browse
+        // working is exactly the case where an empty list means there is
+        // simply no Mac running ExtraPad out there yet.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            if self.hosts.isEmpty { self.macAppLikelyMissing = true }
+        }
     }
 
     func stop() {
         browser?.cancel()
         browser = nil
         isSearching = false
+        sawAnyUpdate = false
+        permissionLikelyDenied = false
+        macAppLikelyMissing = false
     }
 
     private func apply(_ results: Set<NWBrowser.Result>) {
         sawAnyUpdate = true
+        if !results.isEmpty { macAppLikelyMissing = false }
         permissionLikelyDenied = false
         hosts = results.compactMap { result in
             guard case let .service(name, _, _, _) = result.endpoint else { return nil }

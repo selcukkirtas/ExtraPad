@@ -14,12 +14,14 @@ final class MJPEGServer {
     let registry = SessionRegistry()
     /// Asks the main actor to create a display for a device that has none. The
     /// only path here that has to be asynchronous.
-    var createSession: ((String, CGSize?, @escaping (SessionHandles?) -> Void) -> Void)?
+    var createSession: ((String, CGSize?, String?, @escaping (SessionHandles?) -> Void) -> Void)?
     /// Tells the host nobody is watching that device's display any more.
     var releaseSession: ((String) -> Void)?
     let devices = DeviceRegistry()
     private let queue = DispatchQueue(label: "dev.extrapad.http")
     private var listener: NWListener?
+    /// Keeps idle WebSocket connections alive. See `WebSocket.pingFrame()`.
+    private var keepAliveTimer: DispatchSourceTimer?
     /// Second listener, TLS, for clients that can pin a certificate. Safari on
     /// iOS 9 cannot, so the plain one has to stay.
     private var secureListener: NWListener?
@@ -30,6 +32,7 @@ final class MJPEGServer {
     /// stalled" from "the stream is fine but the browser is not rendering it".
     struct ClientStats {
         var address: String
+        var deviceID: String
         var framesSent: Int = 0
         var bytesSent: Int = 0
         var framesSkipped: Int = 0     // dropped because the client was still busy
@@ -38,6 +41,14 @@ final class MJPEGServer {
 
     private let clientLock = NSLock()
     private var _clients: [UInt64: ClientStats] = [:]
+    /// The WebSocket connections themselves, so the host can say something to
+    /// every client at once rather than only answer frame by frame.
+    private var _sockets: [UInt64: NWConnection] = [:]
+
+    /// Whether the Mac is in use. Clients are told on connect and on every
+    /// change, because a client that missed it would hold its iPad awake
+    /// indefinitely.
+    private let hostStatus = Atomic(HostStatus.awake)
 
     var activeStreams: Int {
         clientLock.lock(); defer { clientLock.unlock() }
@@ -59,6 +70,38 @@ final class MJPEGServer {
             if !seen.contains(address) { seen.append(address) }
         }
         return seen.sorted()
+    }
+
+    /// Tells every connected client whether the Mac is in use.
+    ///
+    /// Only transitions go on the wire - the state is already sent to each
+    /// client as it connects, so repeating it would be noise. Sent from
+    /// whichever queue noticed the change; NWConnection serialises its own
+    /// sends, so this cannot interleave with a frame mid-write.
+    func setHostStatus(_ status: HostStatus) {
+        guard hostStatus.exchange(status) != status else { return }
+        let frame = WebSocket.textFrame(status.wireText)
+        clientLock.lock()
+        let sockets = Array(_sockets.values)
+        clientLock.unlock()
+        for socket in sockets {
+            socket.send(content: frame, completion: .contentProcessed { _ in })
+        }
+    }
+
+    /// Drops every live connection for one device outright, rather than
+    /// quietly starving it of frames - used when the trial expires, where
+    /// a frozen picture would read as a bug instead of as "you need a
+    /// license now". The connection's own teardown path (already wired to
+    /// `.failed`/`.cancelled`) does the rest: removing it from `_clients`/
+    /// `_sockets` and calling `releaseSession`.
+    func disconnectClients(forDevice deviceID: String) {
+        clientLock.lock()
+        let targets = _clients.compactMap { clientID, stats in
+            stats.deviceID == deviceID ? _sockets[clientID] : nil
+        }
+        clientLock.unlock()
+        for socket in targets { socket.cancel() }
     }
 
     /// Called when /set asks for new capture settings.
@@ -121,6 +164,7 @@ final class MJPEGServer {
         }
         listener.start(queue: queue)
         self.listener = listener
+        startKeepAlive()
     }
 
     func stop() {
@@ -128,6 +172,31 @@ final class MJPEGServer {
         listener = nil
         secureListener?.cancel()
         secureListener = nil
+        keepAliveTimer?.cancel()
+        keepAliveTimer = nil
+    }
+
+    /// A Mac nobody is touching sends no frames - DeltaEncoder has nothing
+    /// dirty to report - so a connection can go silent for as long as the
+    /// person watching it does. Long enough, and a Wi-Fi router or NAT decides
+    /// it is dead and drops it with no error either side ever sees; the first
+    /// sign is the 90-second idle reaper tearing the display down later. A
+    /// ping well inside that window keeps every socket demonstrably alive.
+    private func startKeepAlive() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 20, repeating: 20)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let frame = WebSocket.pingFrame()
+            self.clientLock.lock()
+            let sockets = Array(self._sockets.values)
+            self.clientLock.unlock()
+            for socket in sockets {
+                socket.send(content: frame, completion: .contentProcessed { _ in })
+            }
+        }
+        timer.resume()
+        keepAliveTimer = timer
     }
 
     private func tcpParameters() -> NWParameters {
@@ -348,8 +417,12 @@ final class MJPEGServer {
                     size = CGSize(width: w, height: h)
                 }
             }
+            // Only the native client sends this - the web client has no
+            // reliable device name to offer, so it is absent there.
+            let deviceName = query[WireNames.deviceNameQuery]?.removingPercentEncoding
             startWebSocket(conn, requestHead: requestHead,
-                           protocolVersion: requested, requestedSize: size)
+                           protocolVersion: requested, requestedSize: size,
+                           requestedName: deviceName)
 
         case "/snapshot":
             if let frame = registry.primary?.frames.latestFrame {
@@ -461,7 +534,8 @@ final class MJPEGServer {
 
     private func startWebSocket(_ conn: NWConnection, requestHead: String,
                                 protocolVersion: Int = WireProtocol.atlas,
-                                requestedSize: CGSize? = nil) {
+                                requestedSize: CGSize? = nil,
+                                requestedName: String? = nil) {
         guard let handshake = WebSocket.handshakeResponse(requestHead: requestHead) else {
             send(conn, status: "400 Bad Request", body: Data("WebSocket upgrade expected\n".utf8),
                  contentType: "text/plain; charset=utf-8")
@@ -478,15 +552,18 @@ final class MJPEGServer {
         // the display rather than to the connection, so an iPad 2 and a Retina
         // mini cannot share one.
         // The device cookie is how a returning iPad gets its own display back
-        // rather than a second one. A client without it - a bare test script -
-        // is treated as one anonymous device.
+        // rather than a second one. A client without it - a bare test script,
+        // or a native client whose cookie failed to come along for the ride -
+        // gets a fresh one-off key of its own: the shared literal "anonymous"
+        // this used to fall back to put every cookie-less client on the same
+        // display, which looked exactly like two iPads mirroring each other.
         let deviceKey = Auth.cookieValue(named: Auth.deviceCookieName, in: requestHead)
-            ?? "anonymous"
+            ?? "anon-\(UUID().uuidString)"
 
         if let existing = registry.handles(for: deviceKey) {
             continueWebSocket(conn, handles: existing, usesVideo: usesVideo)
         } else {
-            createSession?(deviceKey, requestedSize) { [weak self] created in
+            createSession?(deviceKey, requestedSize, requestedName) { [weak self] created in
                 guard let self else { return }
                 guard let created else {
                     self.send(conn, status: "503 Service Unavailable",
@@ -508,7 +585,9 @@ final class MJPEGServer {
         let address: String
         if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "unknown" }
         clientLock.lock()
-        _clients[clientID] = ClientStats(address: address + (usesVideo ? " (h264)" : " (delta)"))
+        _clients[clientID] = ClientStats(address: address + (usesVideo ? " (h264)" : " (delta)"),
+                                         deviceID: handles.deviceID)
+        _sockets[clientID] = conn
         clientLock.unlock()
 
         let inFlight = Atomic(false)
@@ -536,10 +615,19 @@ final class MJPEGServer {
         let teardown: () -> Void = { [weak self] in
             guard let self, !finished.exchange(true) else { return }
             if let subscription { broadcaster.unsubscribe(subscription) }
-            self.clientLock.lock(); self._clients.removeValue(forKey: clientID); self.clientLock.unlock()
+            self.clientLock.lock()
+            self._clients.removeValue(forKey: clientID)
+            self._sockets.removeValue(forKey: clientID)
+            self.clientLock.unlock()
             self.releaseSession?(handles.deviceID)
             conn.cancel()
         }
+
+        // Where the Mac stands, before any pixels: a client that connects to a
+        // locked Mac would otherwise wait for a frame that is not coming and
+        // keep its screen awake doing it.
+        conn.send(content: WebSocket.textFrame(hostStatus.value.wireText),
+                  completion: .contentProcessed { _ in })
 
         // A decoder cannot start without SPS/PPS, and an idle screen produces
         // no new frames to carry them.
@@ -642,13 +730,15 @@ final class MJPEGServer {
 
     private func startStream(_ conn: NWConnection, requestHead: String) {
         // The fallback client needs a display of its own for the same reason
-        // the others do: its resolution is its own.
+        // the others do: its resolution is its own. See the matching comment
+        // in startWebSocket - a shared fallback key here would mirror it onto
+        // whichever other cookie-less client connected most recently.
         let deviceKey = Auth.cookieValue(named: Auth.deviceCookieName, in: requestHead)
-            ?? "anonymous"
+            ?? "anon-\(UUID().uuidString)"
         if let existing = registry.handles(for: deviceKey) {
             continueStream(conn, handles: existing)
         } else {
-            createSession?(deviceKey, nil) { [weak self] created in
+            createSession?(deviceKey, nil, nil) { [weak self] created in
                 guard let self, let created else { conn.cancel(); return }
                 self.continueStream(conn, handles: created)
             }
@@ -676,7 +766,7 @@ final class MJPEGServer {
             address = "unknown"
         }
         clientLock.lock()
-        _clients[clientID] = ClientStats(address: address)
+        _clients[clientID] = ClientStats(address: address, deviceID: handles.deviceID)
         clientLock.unlock()
 
         // One frame in flight at a time. If the iPad cannot keep up we skip

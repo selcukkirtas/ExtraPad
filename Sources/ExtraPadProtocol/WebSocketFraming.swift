@@ -35,7 +35,27 @@ public enum WebSocket {
 
     /// Wraps a payload in a single unmasked binary frame.
     public static func binaryFrame(_ payload: Data) -> Data {
-        var frame = Data([0x82])          // FIN + opcode 0x2 (binary)
+        frame(opcode: 0x82, payload: payload)   // FIN + opcode 0x2 (binary)
+    }
+
+    /// The same, for the few things the host says in words rather than pixels.
+    public static func textFrame(_ text: String) -> Data {
+        frame(opcode: 0x81, payload: Data(text.utf8))   // FIN + opcode 0x1 (text)
+    }
+
+    /// An empty ping. A standards-compliant client answers with a pong on its
+    /// own - Safari and URLSessionWebSocketTask both do, so nothing on the
+    /// client side has to change. This exists purely to put a byte on the wire
+    /// every so often: a Mac nobody is touching produces no dirty tiles, so a
+    /// connection can otherwise sit silent long enough that a NAT or Wi-Fi
+    /// router decides it is dead and drops it - which looked, from here, like
+    /// the client had vanished with no error on either side.
+    public static func pingFrame() -> Data {
+        frame(opcode: 0x89, payload: Data())   // FIN + opcode 0x9 (ping)
+    }
+
+    private static func frame(opcode: UInt8, payload: Data) -> Data {
+        var frame = Data([opcode])
         let count = payload.count
         if count < 126 {
             frame.append(UInt8(count))
