@@ -462,9 +462,10 @@ internal sealed class ClientConnection : IDisposable
         {
             await stream.WriteAsync(data);
         }
-        catch
+        catch (Exception ex)
         {
             // Dead connection; the read loop will notice and clean up.
+            Console.WriteLine($"[ExtraPad] write to client ({Id}) failed: {ex.GetType().Name}: {ex.Message}");
         }
         finally
         {
