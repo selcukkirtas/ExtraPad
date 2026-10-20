@@ -87,11 +87,22 @@ public sealed class ScreenCapture
             bitmap.Save(ms, JpegCodec, encoderParams);
             return ms.ToArray();
         }
-        catch
+        catch (Exception ex)
         {
             // Screen capture can transiently fail around a lock/unlock or a
-            // display topology change; the next tick tries again.
+            // display topology change; the next tick tries again. Logged but
+            // throttled - at 15fps a persistent failure would otherwise
+            // flood the console with an identical line several times a
+            // second.
+            var now = DateTime.UtcNow;
+            if (now - lastErrorLogged > TimeSpan.FromSeconds(5))
+            {
+                lastErrorLogged = now;
+                Console.WriteLine($"[ExtraPad] capture of {CurrentDeviceName} failed: {ex.GetType().Name}: {ex.Message}");
+            }
             return null;
         }
     }
+
+    private DateTime lastErrorLogged = DateTime.MinValue;
 }

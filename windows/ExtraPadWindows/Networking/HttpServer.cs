@@ -204,6 +204,8 @@ public sealed class HttpServer
         if (!authorised)
         {
             var wantsPage = path is "/" or "/index.html" or "/delta";
+            Console.WriteLine($"[ExtraPad] 401 on {path} (no key/cookie matched) - cookie header: "
+                + $"\"{(headers.TryGetValue("cookie", out var ck) ? ck : "(none)")}\"");
             await SendPageAsync(stream, "200 OK",
                 wantsPage ? WebClientPages.PairingPage(wrong: false) : WebClientPages.UnauthorisedPage(),
                 status2: wantsPage ? null : "401 Unauthorized");
@@ -314,6 +316,7 @@ public sealed class HttpServer
         var handshake = WebSocketFraming.HandshakeResponse(headers);
         if (handshake is null)
         {
+            Console.WriteLine("[ExtraPad] /ws upgrade rejected - no valid Sec-WebSocket-Key/Upgrade header");
             await SendAsync(stream, "400 Bad Request", Encoding.UTF8.GetBytes("WebSocket upgrade expected\n"),
                 "text/plain; charset=utf-8");
             tcpClient.Close();
@@ -323,6 +326,7 @@ public sealed class HttpServer
 
         var id = Guid.NewGuid();
         var connection = new ClientConnection(id, tcpClient, stream);
+        Console.WriteLine($"[ExtraPad] /ws client connected ({id})");
         clients[id] = connection;
 
         await connection.SendRawAsync(WebSocketFraming.TextFrame(hostStatus.WireText()));
@@ -354,11 +358,12 @@ public sealed class HttpServer
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Connection dropped; fall through to cleanup below.
+            Console.WriteLine($"[ExtraPad] /ws client ({id}) read loop ended: {ex.GetType().Name}: {ex.Message}");
         }
         done:
+        Console.WriteLine($"[ExtraPad] /ws client disconnected ({id})");
         InputInjector.ReleaseIfHeld();
         clients.TryRemove(id, out _);
         connection.Dispose();
@@ -393,14 +398,26 @@ public sealed class HttpServer
     private async Task CaptureLoop(CancellationToken token)
     {
         var delay = 1000 / Math.Max(fps, 1);
+        var framesSent = 0;
+        var lastStatusLog = DateTime.UtcNow;
         while (!token.IsCancellationRequested)
         {
             try { await captureSignal.WaitAsync(delay, token); }
             catch (OperationCanceledException) { return; }
+
+            if (DateTime.UtcNow - lastStatusLog > TimeSpan.FromSeconds(5))
+            {
+                lastStatusLog = DateTime.UtcNow;
+                Console.WriteLine($"[ExtraPad] capture status: {clients.Count} client(s), "
+                    + $"{hostStatus}, {framesSent} frame(s) sent in the last 5s");
+                framesSent = 0;
+            }
+
             if (hostStatus == HostStatus.Locked || clients.IsEmpty) continue;
 
             var jpeg = capture.CaptureJpeg(jpegQuality);
             if (jpeg is null) continue;
+            framesSent++;
 
             var message = new AtlasMessage
             {
