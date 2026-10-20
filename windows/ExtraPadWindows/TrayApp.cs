@@ -36,6 +36,18 @@ public sealed class TrayApp : ApplicationContext
 
         trayIcon.ContextMenuStrip = BuildMenu();
         server.Start();
+
+        // WinExe apps don't reliably show anything in the terminal that
+        // launched them, and this machine has no monitor to glance at - so
+        // the balloon tip (and the console line, when one is attached) are
+        // the only confirmation that this actually started.
+        Console.WriteLine($"[ExtraPad] listening on {string.Join(", ", urls)}");
+        Console.WriteLine($"[ExtraPad] pairing code: {auth.PairingCode}");
+        trayIcon.BalloonTipTitle = "ExtraPad is running";
+        trayIcon.BalloonTipText = urls.Count > 0
+            ? $"Open {urls[0]} on the iPad - pairing code {auth.PairingCode}"
+            : "No LAN address found - check the network connection.";
+        trayIcon.ShowBalloonTip(5000);
     }
 
     private ContextMenuStrip BuildMenu()
