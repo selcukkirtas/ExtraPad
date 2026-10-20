@@ -79,21 +79,6 @@ final class SessionManager {
         sessions.removeAll()
     }
 
-    /// The same teardown as `shutDownAll`, minus cancelling the reaper - the
-    /// app keeps running and a license entered a moment later should be able
-    /// to create fresh sessions normally. Returns the device IDs that were
-    /// live, so callers can drop their connections too.
-    @discardableResult
-    func shutDownAllForExpiredTrial() async -> [String] {
-        let ids = Array(sessions.keys)
-        for (id, session) in sessions {
-            await session.shutDown()
-            onSessionRemoved?(id)
-        }
-        sessions.removeAll()
-        return ids
-    }
-
     func apply(quality: Double?, fps: Int?) async {
         if let quality { baseConfig.quality = quality }
         if let fps { baseConfig.fps = fps }

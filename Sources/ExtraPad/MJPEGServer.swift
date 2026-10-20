@@ -32,7 +32,6 @@ final class MJPEGServer {
     /// stalled" from "the stream is fine but the browser is not rendering it".
     struct ClientStats {
         var address: String
-        var deviceID: String
         var framesSent: Int = 0
         var bytesSent: Int = 0
         var framesSkipped: Int = 0     // dropped because the client was still busy
@@ -87,21 +86,6 @@ final class MJPEGServer {
         for socket in sockets {
             socket.send(content: frame, completion: .contentProcessed { _ in })
         }
-    }
-
-    /// Drops every live connection for one device outright, rather than
-    /// quietly starving it of frames - used when the trial expires, where
-    /// a frozen picture would read as a bug instead of as "you need a
-    /// license now". The connection's own teardown path (already wired to
-    /// `.failed`/`.cancelled`) does the rest: removing it from `_clients`/
-    /// `_sockets` and calling `releaseSession`.
-    func disconnectClients(forDevice deviceID: String) {
-        clientLock.lock()
-        let targets = _clients.compactMap { clientID, stats in
-            stats.deviceID == deviceID ? _sockets[clientID] : nil
-        }
-        clientLock.unlock()
-        for socket in targets { socket.cancel() }
     }
 
     /// Called when /set asks for new capture settings.
@@ -585,8 +569,7 @@ final class MJPEGServer {
         let address: String
         if case let .hostPort(host, _) = conn.endpoint { address = "\(host)" } else { address = "unknown" }
         clientLock.lock()
-        _clients[clientID] = ClientStats(address: address + (usesVideo ? " (h264)" : " (delta)"),
-                                         deviceID: handles.deviceID)
+        _clients[clientID] = ClientStats(address: address + (usesVideo ? " (h264)" : " (delta)"))
         _sockets[clientID] = conn
         clientLock.unlock()
 
@@ -766,7 +749,7 @@ final class MJPEGServer {
             address = "unknown"
         }
         clientLock.lock()
-        _clients[clientID] = ClientStats(address: address, deviceID: handles.deviceID)
+        _clients[clientID] = ClientStats(address: address)
         clientLock.unlock()
 
         // One frame in flight at a time. If the iPad cannot keep up we skip
