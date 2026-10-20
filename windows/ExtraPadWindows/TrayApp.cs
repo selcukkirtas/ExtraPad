@@ -23,7 +23,7 @@ public sealed class TrayApp : ApplicationContext
     {
         settings = Settings.Load();
         auth = new Auth(settings);
-        capture = new ScreenCapture();
+        capture = new ScreenCapture(settings.SelectedScreenIndex);
         server = new HttpServer(Port, auth, capture);
         urls = LocalUrls();
 
@@ -67,6 +67,9 @@ public sealed class TrayApp : ApplicationContext
         }
 
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(BuildDisplayPicker());
+
+        menu.Items.Add(new ToolStripSeparator());
         var codeItem = new ToolStripMenuItem($"Pairing code: {auth.PairingCode}");
         codeItem.Click += (_, _) => Clipboard.SetText(auth.PairingCode);
         menu.Items.Add(codeItem);
@@ -87,6 +90,32 @@ public sealed class TrayApp : ApplicationContext
         menu.Items.Add(quit);
 
         return menu;
+    }
+
+    /// A machine with more than one display (an RDP session's own virtual
+    /// adapter plus, once installed, a virtual display driver's monitor)
+    /// has no reliable way to know which one is intended without being
+    /// told - so list them and let the tray menu pick, rather than
+    /// guessing from "primary", which may not even be the right one here.
+    private ToolStripMenuItem BuildDisplayPicker()
+    {
+        var root = new ToolStripMenuItem($"Mirroring: {capture.CurrentDeviceName} ({capture.ScreenSize.Width}x{capture.ScreenSize.Height})");
+        foreach (var (index, deviceName, bounds, isPrimary) in ScreenCapture.AllDisplays())
+        {
+            var label = $"{deviceName}  {bounds.Width}x{bounds.Height}" + (isPrimary ? "  (primary)" : "");
+            var item = new ToolStripMenuItem(label) { Checked = deviceName == capture.CurrentDeviceName };
+            item.Click += (_, _) =>
+            {
+                capture.SelectDisplay(index);
+                settings.SelectedScreenIndex = index;
+                settings.Save();
+                root.Text = $"Mirroring: {capture.CurrentDeviceName} ({capture.ScreenSize.Width}x{capture.ScreenSize.Height})";
+                foreach (ToolStripMenuItem sibling in root.DropDownItems) sibling.Checked = false;
+                item.Checked = true;
+            };
+            root.DropDownItems.Add(item);
+        }
+        return root;
     }
 
     private void ExitApp()

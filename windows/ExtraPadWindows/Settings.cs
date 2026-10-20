@@ -9,6 +9,11 @@ public sealed class Settings
 {
     public string AccessKey { get; set; } = "";
     public string PairingCode { get; set; } = "";
+    /// Which Screen.AllScreens index to capture. -1 means "primary display",
+    /// the default until someone picks a specific one from the tray menu -
+    /// useful once more than one display exists, e.g. a virtual display
+    /// driver's monitor alongside the RDP session's own.
+    public int SelectedScreenIndex { get; set; } = -1;
 
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

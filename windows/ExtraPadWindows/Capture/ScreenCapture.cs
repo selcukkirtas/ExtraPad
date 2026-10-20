@@ -11,26 +11,62 @@ namespace ExtraPadWindows.Capture;
 /// end to end without waiting on that driver integration.
 public sealed class ScreenCapture
 {
-    public Size ScreenSize { get; }
+    public Size ScreenSize { get; private set; }
 
-    /// Where the primary monitor actually sits in the virtual desktop's
+    /// Which physical/virtual monitor is being captured - a machine with
+    /// more than one display (e.g. a headless box once a virtual display
+    /// driver is installed) has no reliable way to know which one is
+    /// "right" without being told. Exposed so the tray menu can show a
+    /// picker instead of guessing.
+    public string CurrentDeviceName { get; private set; } = "";
+
+    /// Where the captured monitor actually sits in the virtual desktop's
     /// coordinate space. On a single-monitor machine this is (0,0), but with
-    /// more than one display the primary monitor is routinely offset - e.g.
-    /// a secondary display to its left puts the primary's origin at a
-    /// positive X. CopyFromScreen takes virtual-desktop coordinates, so
-    /// capturing from a hardcoded (0,0) on such a machine grabs whatever
-    /// happens to be at the *virtual desktop's* origin - often empty desktop
-    /// background - rather than the primary monitor at all.
-    private readonly Point origin;
+    /// more than one display a monitor is routinely offset - e.g. a display
+    /// to its left puts this one's origin at a positive X. CopyFromScreen
+    /// takes virtual-desktop coordinates, so capturing from a hardcoded
+    /// (0,0) on such a machine grabs whatever happens to be at the *virtual
+    /// desktop's* origin - often empty desktop background - rather than the
+    /// intended monitor at all.
+    private Point origin;
 
     private static readonly ImageCodecInfo JpegCodec =
         ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
 
-    public ScreenCapture()
+    public ScreenCapture(int initialIndex = -1)
     {
-        var bounds = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+        var screens = Screen.AllScreens;
+        ApplyBounds(initialIndex >= 0 && initialIndex < screens.Length ? screens[initialIndex] : Screen.PrimaryScreen);
+    }
+
+    /// Every connected display right now, in a form the tray menu can list
+    /// without reaching into System.Windows.Forms itself.
+    public static IReadOnlyList<(int Index, string DeviceName, Rectangle Bounds, bool IsPrimary)> AllDisplays()
+    {
+        var screens = Screen.AllScreens;
+        var result = new List<(int, string, Rectangle, bool)>();
+        for (var i = 0; i < screens.Length; i++)
+        {
+            result.Add((i, screens[i].DeviceName, screens[i].Bounds, screens[i].Primary));
+        }
+        return result;
+    }
+
+    /// Switches which monitor gets captured. Falls back to the primary
+    /// display if the index no longer exists (a display can disappear
+    /// between launches, or a driver can renumber them).
+    public void SelectDisplay(int index)
+    {
+        var screens = Screen.AllScreens;
+        ApplyBounds(index >= 0 && index < screens.Length ? screens[index] : Screen.PrimaryScreen);
+    }
+
+    private void ApplyBounds(Screen? screen)
+    {
+        var bounds = screen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
         origin = bounds.Location;
         ScreenSize = bounds.Size;
+        CurrentDeviceName = screen?.DeviceName ?? "(none found)";
     }
 
     /// Grabs the current frame and JPEG-encodes it. Returns null if nothing
