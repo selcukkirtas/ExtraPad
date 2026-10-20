@@ -54,6 +54,7 @@ public sealed class HttpServer
         listener.Start();
         _ = Task.Run(() => AcceptLoop(cts.Token));
         _ = Task.Run(() => CaptureLoop(cts.Token));
+        _ = Task.Run(() => KeepAliveLoop(cts.Token));
         SystemEvents.SessionSwitch += OnSessionSwitch;
     }
 
@@ -367,6 +368,24 @@ public sealed class HttpServer
     {
         var frame = WebSocketFraming.TextFrame(text);
         foreach (var client in clients.Values) _ = client.SendRawAsync(frame);
+    }
+
+    /// Mirrors MJPEGServer.swift's startKeepAlive(): a WebSocket client sat
+    /// idle long enough - nobody touching the iPad, no screen changes worth
+    /// a frame - looks dead to a NAT or Wi-Fi router, which drops it with no
+    /// error on either side. The symptom was exactly that: the connection
+    /// silently dies, the keep-awake video stops with it, and the iPad falls
+    /// back to its normal auto-lock timer. A ping well inside that window
+    /// keeps every socket demonstrably alive.
+    private async Task KeepAliveLoop(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(20), token); }
+            catch (OperationCanceledException) { return; }
+            var frame = WebSocketFraming.PingFrame();
+            foreach (var client in clients.Values) _ = client.SendRawAsync(frame);
+        }
     }
 
     // MARK: - Capture loop
