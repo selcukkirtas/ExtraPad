@@ -326,7 +326,6 @@ public sealed class HttpServer
 
         var id = Guid.NewGuid();
         var connection = new ClientConnection(id, tcpClient, stream);
-        Console.WriteLine($"[ExtraPad] /ws client connected ({id})");
         clients[id] = connection;
 
         await connection.SendRawAsync(WebSocketFraming.TextFrame(hostStatus.WireText()));
@@ -363,7 +362,6 @@ public sealed class HttpServer
             Console.WriteLine($"[ExtraPad] /ws client ({id}) read loop ended: {ex.GetType().Name}: {ex.Message}");
         }
         done:
-        Console.WriteLine($"[ExtraPad] /ws client disconnected ({id})");
         InputInjector.ReleaseIfHeld();
         clients.TryRemove(id, out _);
         connection.Dispose();
@@ -398,26 +396,15 @@ public sealed class HttpServer
     private async Task CaptureLoop(CancellationToken token)
     {
         var delay = 1000 / Math.Max(fps, 1);
-        var framesSent = 0;
-        var lastStatusLog = DateTime.UtcNow;
         while (!token.IsCancellationRequested)
         {
             try { await captureSignal.WaitAsync(delay, token); }
             catch (OperationCanceledException) { return; }
 
-            if (DateTime.UtcNow - lastStatusLog > TimeSpan.FromSeconds(5))
-            {
-                lastStatusLog = DateTime.UtcNow;
-                Console.WriteLine($"[ExtraPad] capture status: {clients.Count} client(s), "
-                    + $"{hostStatus}, {framesSent} frame(s) sent in the last 5s");
-                framesSent = 0;
-            }
-
             if (hostStatus == HostStatus.Locked || clients.IsEmpty) continue;
 
             var jpeg = capture.CaptureJpeg(jpegQuality);
             if (jpeg is null) continue;
-            framesSent++;
 
             var message = new AtlasMessage
             {

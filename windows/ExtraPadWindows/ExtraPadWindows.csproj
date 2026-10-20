@@ -1,13 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Exe rather than WinExe for now: a WinExe (GUI subsystem) process
-         isn't attached to the launching console at all, so every
-         Console.WriteLine diagnostic was going nowhere. This opens an
-         extra console window alongside the tray icon - worth it while
-         this is still being debugged on a headless box. Switch back to
-         WinExe once the host is stable. -->
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
