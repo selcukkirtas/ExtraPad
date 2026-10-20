@@ -36,7 +36,13 @@ public static class WebSocketFraming
     {
         using var ms = new MemoryStream();
         ms.WriteByte(opcode);
-        var count = payload.Length;
+        // long, not int: shifting a 32-bit value by up to 56 bits in C# only
+        // uses the shift amount's low 5 bits (count >> 56 silently becomes
+        // count >> 24), which produced garbage length bytes for every
+        // payload over 64KB - a full-screen JPEG routinely is. The browser
+        // reads the resulting frame as a different, wrong length and tears
+        // the connection down as a protocol violation.
+        long count = payload.Length;
         if (count < 126)
         {
             ms.WriteByte((byte)count);
