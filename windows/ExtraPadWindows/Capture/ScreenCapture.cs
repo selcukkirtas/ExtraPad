@@ -13,12 +13,24 @@ public sealed class ScreenCapture
 {
     public Size ScreenSize { get; }
 
+    /// Where the primary monitor actually sits in the virtual desktop's
+    /// coordinate space. On a single-monitor machine this is (0,0), but with
+    /// more than one display the primary monitor is routinely offset - e.g.
+    /// a secondary display to its left puts the primary's origin at a
+    /// positive X. CopyFromScreen takes virtual-desktop coordinates, so
+    /// capturing from a hardcoded (0,0) on such a machine grabs whatever
+    /// happens to be at the *virtual desktop's* origin - often empty desktop
+    /// background - rather than the primary monitor at all.
+    private readonly Point origin;
+
     private static readonly ImageCodecInfo JpegCodec =
         ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
 
     public ScreenCapture()
     {
-        ScreenSize = Screen.PrimaryScreen?.Bounds.Size ?? new Size(1920, 1080);
+        var bounds = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+        origin = bounds.Location;
+        ScreenSize = bounds.Size;
     }
 
     /// Grabs the current frame and JPEG-encodes it. Returns null if nothing
@@ -30,7 +42,7 @@ public sealed class ScreenCapture
             using var bitmap = new Bitmap(ScreenSize.Width, ScreenSize.Height, PixelFormat.Format24bppRgb);
             using (var g = Graphics.FromImage(bitmap))
             {
-                g.CopyFromScreen(0, 0, 0, 0, ScreenSize, CopyPixelOperation.SourceCopy);
+                g.CopyFromScreen(origin.X, origin.Y, 0, 0, ScreenSize, CopyPixelOperation.SourceCopy);
             }
 
             using var ms = new MemoryStream();
